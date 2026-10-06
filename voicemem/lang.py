@@ -47,11 +47,6 @@ def _check(value: str) -> str:
     return normalized
 
 
-def normalize_language(value: str) -> str:
-    """Normalize a BCP 47 language tag without changing its meaning."""
-    return _check(value)
-
-
 def language_name(value: str) -> str:
     tag = _check(value)
     if tag in LANGUAGE_NAMES:
