@@ -72,9 +72,10 @@ def _parse(argv):
                    help="用哪个 memory space（voicemem_memoryspace/<space>/）")
     p.add_argument("--memory_root", default=os.environ.get("VOICEMEM_MEMORY_ROOT", ""),
                    help="直接指定记忆库目录，给了就盖过 --space")
-    p.add_argument("--lang",
+    p.add_argument("--lang", choices=["en", "zh"],
                    default=os.environ.get("VOICEMEM_MEMORY_LANGUAGE", "en"),
-                   help="Default memory-space language as a BCP 47 tag (default: en).")
+                   help="新建 Memory Space 时用的语言：en（默认）/ zh。"
+                        "已有空间用它自己建的时候定的那个")
     p.add_argument("--log-file", default=os.environ.get("VOICEMEM_LOG_FILE", ""),
                    help="日志文件路径；不传则自动写到 results/logs/")
     p.add_argument("--no-file-log", action="store_true",
@@ -89,8 +90,7 @@ ARGS = _parse(None if __name__ == "__main__" else [])
 # print 才能从进程启动第一刻起完整落盘。被别的模块 import 时不擅自创建日志文件。
 # 语言：核心默认英文，demo 用 --lang zh 切中文。放在建 VoiceMem 之前，
 # 因为抽取 prompt 是按它选中英两套示例的。
-from voicemem.lang import (set_memory_language as _set_lang,
-                             normalize_language as _normalize_language)   # noqa: E402
+from voicemem.lang import set_memory_language as _set_lang   # noqa: E402
 _set_lang(ARGS.lang)
 
 LOG_FILE = None
@@ -239,6 +239,7 @@ UI_LANG = ARGS.lang          # 界面语言。右上角随时可切，跟记忆/
 #: 一个英文库里用户偶尔冒一句中文，助手跟着说中文、这轮记忆也就成了中文，
 #: 库就混了。语言在建空间时定死，这里照着执行。
 _LANG_NOTE = {
+    "zh": "全程用中文回复，即使用户用别的语言问你。",
     "en": "Always reply in English, even if the user writes in another language.",
 }
 
@@ -260,7 +261,7 @@ def space_language(name: str) -> str:
     try:
         v = (_json.loads(f.read_text(encoding="utf-8"))
              .get("space", {}).get("language", ""))
-        return _normalize_language(v) if v else "en"
+        return "zh" if str(v).lower().startswith("zh") else "en"
     except Exception:
         return "en"
 
@@ -274,7 +275,7 @@ def _write_space_language(name: str, lang: str) -> None:
         doc.setdefault("space", {})["language"] = lang
         f.write_text(_json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as e:
-        print(f"[space] Failed to write language (non-fatal): {e}", flush=True)
+        print(f"[space] 写语言失败（不影响使用）：{e}", flush=True)
 
 
 def set_lang(lang: str) -> None:
@@ -286,13 +287,12 @@ def set_lang(lang: str) -> None:
     """
     global UI_LANG
     UI_LANG = "en" if str(lang).lower().startswith("en") else "zh"
-    print(f"[lang] UI language set to {UI_LANG}; active space language is {SPACE_LANG}",
+    print(f"[lang] 界面切到 {UI_LANG}（空间「{ACTIVE_SPACE}」仍是 {SPACE_LANG}）",
           flush=True)
 
 
 def _lang_note() -> str:
-    from voicemem.lang import language_name
-    return f"Always reply in {language_name(SPACE_LANG)}, even if the user writes in another language."
+    return _LANG_NOTE.get(SPACE_LANG, _LANG_NOTE["en"])
 
 
 _NO_MEMORY_NOTE = (
@@ -328,7 +328,7 @@ def _musical_memory_ids() -> set[str]:
         store = vm._o._get_repo()._cognitive_store
         return set(store.memory_ids_for_slots_v2(vm._o._user_id, ids))
     except Exception as e:
-        print(f"[web] Failed to read music tags (non-fatal): {type(e).__name__}: {e}", flush=True)
+        print(f"[web] 读音乐标签失败（不影响回放）：{type(e).__name__}: {e}", flush=True)
         return set()
 
 
@@ -1068,9 +1068,9 @@ def create_space(name: str, language: str = "") -> dict:
         raise FileExistsError(f"「{safe}」已经存在了")
     d.mkdir(parents=True, exist_ok=True)
     get_space(safe)                      # 建库 + 预热
-    lang = _normalize_language(language or ARGS.lang)
+    lang = "zh" if str(language or ARGS.lang).lower().startswith("zh") else "en"
     _write_space_language(safe, lang)    # 建的时候定一次，之后不再变
-    print(f"[space] Created '{safe}' (language {lang}) -> {d}", flush=True)
+    print(f"[space] 新建「{safe}」（语言 {lang}）→ {d}", flush=True)
     return {"id": safe, "name": safe, "count": 0, "language": lang}
 
 
