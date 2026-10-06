@@ -6,7 +6,7 @@
 <title>VoiceMem</title>
 <style>
 /* ══════════════════════════════════════════════════════════════════════
-   VoiceMem —— 黑灰（ChatGPT 对齐）。左脑蓝 / 右脑粉是仅有的两个彩色。
+   VoiceMem dark UI with blue Left Brain and rose Right Brain accents.
    ══════════════════════════════════════════════════════════════════════ */
 :root{
   --bg:#212121; --bg-side:#181818; --bg-panel:#1c1c1c; --bg-input:#2b2b2b;
@@ -315,13 +315,13 @@ button{cursor:pointer;background:none;border:none}
         <span class="id" id="spkId" data-i18n="voiceMatched">speaker 0 · voice matched</span>
         <span class="lv" id="spkLv"><i></i><i></i><i></i><i></i><i></i></span>
       </div>
-      <div class="live-text idle" id="liveInput" data-i18n="waitingYou">等待You说话…</div>
+      <div class="live-text idle" id="liveInput" data-i18n="waitingYou">Waiting for you to speak…</div>
       <input id="textIn" class="textin" placeholder="Or type and press Enter" />
       <div class="tags" id="tags"></div>
     </div>
 
     <div class="panel p-recall">
-      <div class="panel-h">Top-K 召回</div>
+      <div class="panel-h">Top-K retrieval</div>
       <div class="recall-cols">
         <div class="rc l"><div class="rc-h">Left · Facts</div><ul id="recallL"></ul></div>
         <div class="rc r"><div class="rc-h">Right · Profile</div><ul id="recallR"></ul></div>
@@ -372,7 +372,7 @@ button{cursor:pointer;background:none;border:none}
           <option value="right" data-i18n="dlRight">Right · Profile</option>
           <option value="chat" data-i18n="dlChat">This conversation</option>
         </select>
-        <button class="btn sm" id="dlBtn" data-i18n="download">下载</button>
+        <button class="btn sm" id="dlBtn" data-i18n="download">Download</button>
       </div>
     </div>
 
@@ -404,7 +404,7 @@ button{cursor:pointer;background:none;border:none}
   </section>
 </div>
 
-<!-- New chat：必须先选 Memory Space -->
+<!-- New chat: select a Memory Space first -->
 <div class="mask" id="mask">
   <div class="modal">
     <h3 data-i18n="newChat">New chat</h3>
@@ -420,7 +420,7 @@ button{cursor:pointer;background:none;border:none}
     </div>
   </div>
 </div>
-<!-- 新建 Memory Space。独立一个弹窗，不跟「New chat」那个抢 #mask -->
+<!-- New Memory Space. This dialog is separate from the New Chat dialog. -->
 <div class="mask" id="spaceMask">
   <div class="modal">
     <h3 data-i18n="spaceNewTitle">新建 Memory Space</h3>
@@ -500,11 +500,11 @@ button{cursor:pointer;background:none;border:none}
     d.textContent += msg + '\n';
   }
   window.addEventListener('error', function(e){
-    show('[JS 出错] ' + (e.message||'') + '\n  ' + (e.filename||'') + ':' + (e.lineno||'') +
+    show('[JS error] ' + (e.message||'') + '\n  ' + (e.filename||'') + ':' + (e.lineno||'') +
          (e.error && e.error.stack ? '\n' + e.error.stack.split('\n').slice(0,4).join('\n') : ''));
   });
   window.addEventListener('unhandledrejection', function(e){
-    show('[Promise 没接住] ' + (e.reason && (e.reason.stack||e.reason.message) || e.reason));
+    show('[Unhandled promise] ' + (e.reason && (e.reason.stack||e.reason.message) || e.reason));
   });
 })();
 /* ══════════════════════════════════════════════════════════════════════
@@ -518,7 +518,7 @@ button{cursor:pointer;background:none;border:none}
 const I18N = {
   zh: {
     chat:'对话', memspace:'Memory Space', liveInput:'流式输入 · Live input',
-    you:'You', waitingYou:'等待You说话…', noReplyYet:'No reply yet.',
+    you:'You', waitingYou:'Waiting for you to speak…', noReplyYet:'No reply yet.',
     talkStart:'Start talking', talkEnd:'结束对话', pause:'Pause', resume:'继续',
     ended:'已结束。',
     idle:'Idle', listening:'正在听', replying:'正在回复', paused:'已Pause',
@@ -526,7 +526,7 @@ const I18N = {
     leftFacts:'Left · Facts', rightProfile:'Right · Profile',
     emotion:'情绪', personality:'性格', preference:'偏好',
     newChat:'New chat', expand:'展开侧栏', collapse:'Collapse sidebar',
-    download:'下载', dlAll:'All memories in this space', dlLeft:'Left · Facts',
+    download:'Download', dlAll:'All memories in this space', dlLeft:'Left · Facts',
     dlRight:'Right · Profile', dlChat:'This conversation',
     spaceNamePh:'Name the new space', spaceCreate:'Create space', spaceCreating:'创建中…',
     chatCreate:'Create chat', cancel:'Cancel',
@@ -550,7 +550,7 @@ const I18N = {
     badgeStat:'{0}（左{1}/右{2}）',
     startHint:'<b>开始一段对话</b>这条对话属于 {0}，说点什么，或在左边打字回车。',
     createdIn:'已在 {0} 里Create chat，所属空间不可更改。',
-    downloadedChat:'已下载This conversation。', downloadedN:'已下载 {0} 条记忆（{1}）。',
+    downloadedChat:'已DownloadThis conversation。', downloadedN:'已Download {0} 条记忆（{1}）。',
     rbInternalOnly:'本轮右脑命中 {0} 条，全是内部笔记',
     voiceMatched:'speaker 0 · voice matched', voiceKnown:' · 已识别为「{0}」',
     mySpace:'我创建的空间', diskSpace:'磁盘上的空间',
