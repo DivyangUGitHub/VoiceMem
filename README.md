@@ -3,10 +3,6 @@
 </p>
 
 <p align="center">
-  <a href="#chinese">中文</a> | <strong>English</strong>
-</p>
-
-<p align="center">
   <a href="https://xzf-thu.github.io/VoiceMem/">Project Page 🌐</a> /
   <a href="https://arxiv.org/pdf/2608.26005">Technical Report 📖</a> /
   <a href="https://huggingface.co/zhifeixie/VoiceMem_Default_Models_Env">VoiceMem Utils 🤗</a> /
