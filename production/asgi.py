@@ -32,6 +32,20 @@ app = FastAPI(
     redoc_url=None,
 )
 
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(self), microphone=(self), geolocation=(), payment=()",
+    )
+    return response
+
+
 @app.get("/healthz", include_in_schema=False)
 def healthz():
     return JSONResponse({"status": "ok", "service": "voicemem"})
