@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: voicemem
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DEMO_MODE
+        value: llm_tts
+      - key: VOICEMEM_MEMORYSPACE_ROOT
+        value: /var/lib/voicemem/voicemem_memoryspace
+      - key: VOICEMEM_FILE_LOG
+        value: "0"
+    disk:
+      name: voicemem-data
+      mountPath: /var/lib/voicemem
+      sizeGB: 10
