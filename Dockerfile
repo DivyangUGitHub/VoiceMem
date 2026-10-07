@@ -10,7 +10,9 @@ COPY frontend/ ./
 RUN pnpm build
 
 FROM python:3.11-slim AS runtime
-ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_NO_CACHE_DIR=1     VOICEMEM_PORT=10000     DEMO_MODE=llm_tts     VOICEMEM_MEMORYSPACE_ROOT=/var/lib/voicemem/voicemem_memoryspace
+ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PIP_NO_CACHE_DIR=1     VOICEMEM_PORT=10000     DEMO_MODE=llm_tts     VOICEMEM_MEMORYSPACE_ROOT=/var/lib/voicemem/voicemem_memoryspace \
+    HF_HOME=/var/lib/voicemem/huggingface \
+    HF_HUB_CACHE=/var/lib/voicemem/huggingface/hub
 
 WORKDIR /app
 
@@ -27,7 +29,8 @@ RUN pip install --upgrade pip setuptools wheel && pip install -e .
 COPY --from=frontend-builder /src/frontend/out ./frontend/out
 COPY --from=frontend-builder /src/frontend/package.json ./frontend/package.json
 
-RUN mkdir -p /var/lib/voicemem/voicemem_memoryspace /var/lib/voicemem/logs
+RUN mkdir -p /var/lib/voicemem/voicemem_memoryspace /var/lib/voicemem/logs /var/lib/voicemem/huggingface \
+    && ln -s /var/lib/voicemem/models /app/models
 
 EXPOSE 10000
 
