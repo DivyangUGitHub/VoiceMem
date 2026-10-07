@@ -1,0 +1,22 @@
+services:
+  voicemem:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8787:10000"
+    env_file:
+      - .env.production
+    volumes:
+      - voicemem-data:/var/lib/voicemem
+    restart: unless-stopped
+    init: true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:10000/healthz', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+volumes:
+  voicemem-data:
