@@ -252,7 +252,7 @@ def _write_space_language(name: str, lang: str) -> None:
         doc.setdefault("space", {})["language"] = lang
         f.write_text(_json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as e:
-        print(f"[space] 写语言失败（不影响使用）：{e}", flush=True)
+        print(f"[space] Failed to write language (non-blocking): {e}", flush=True)
 
 
 def set_lang(lang: str) -> None:
@@ -264,7 +264,7 @@ def set_lang(lang: str) -> None:
     """
     global UI_LANG
     UI_LANG = "en" if str(lang).lower().startswith("en") else "zh"
-    print(f"[lang] 界面切到 {UI_LANG}（空间「{ACTIVE_SPACE}」仍是 {SPACE_LANG}）",
+    print(f"[lang] UI switched to {UI_LANG} (space {ACTIVE_SPACE} remains {SPACE_LANG})",
           flush=True)
 
 
@@ -305,7 +305,7 @@ def _musical_memory_ids() -> set[str]:
         store = vm._o._get_repo()._cognitive_store
         return set(store.memory_ids_for_slots_v2(vm._o._user_id, ids))
     except Exception as e:
-        print(f"[web] 读音乐标签失败（不影响回放）：{type(e).__name__}: {e}", flush=True)
+        print(f"[web] Failed to read music tags (non-blocking): {type(e).__name__}: {e}", flush=True)
         return set()
 
 
@@ -556,7 +556,7 @@ def _tune_memories() -> list[dict]:
                  ORDER BY m.created_at DESC LIMIT 300""").fetchall()
         c.close()
     except Exception as e:
-        print(f"[replay] 列音乐记忆失败：{type(e).__name__}: {e}", flush=True)
+        print(f"[replay] Failed to list music memories: {type(e).__name__}: {e}", flush=True)
         return []
 
     out = []
@@ -588,7 +588,7 @@ def _archived_memory_ids() -> list[str]:
         c.close()
         return [r[0] for r in rows]
     except Exception as e:
-        print(f"[web] 列存档记忆失败（不影响回放）：{type(e).__name__}: {e}", flush=True)
+        print(f"[web] Failed to list archived memories (non-blocking): {type(e).__name__}: {e}", flush=True)
         return []
 
 
@@ -758,7 +758,7 @@ def _replay_id(text: str, result) -> str:
             elif -len(cand) <= (nth - 1 if nth > 0 else nth) < len(cand):
                 pick = cand[nth - 1 if nth > 0 else nth]
             else:
-                print(f"  [replay] 那段时间只有 {len(cand)} 首，没有第 {nth} 首", flush=True)
+                print(f"  [replay] Only {len(cand)} recordings exist in that period; no #{nth} recording", flush=True)
                 return ""
             print(f"  [replay] 按条件挑中 {pick['id'][:12]}（{pick['at']:%m-%d %H:%M}"
                   f"{' / ' + place if place else ''}"
@@ -779,10 +779,10 @@ def _replay_id(text: str, result) -> str:
     playable = [h.memory_id for h in (getattr(result, "hits", None) or [])
                 if audio_of(h.memory_id)]
     if playable:
-        print(f"  [replay] 没有音乐标签，放检索到的 {playable[0][:12]}", flush=True)
+        print(f"  [replay] No music tag; playing retrieved recording {playable[0][:12]}", flush=True)
         return playable[0]
     if _last_tune_path():
-        print("  [replay] 还没入库，放刚听过的那段", flush=True)
+        print("  [replay] Not indexed yet; playing the most recently heard recording", flush=True)
         return LAST_TUNE_ID
     print(f"  [replay] 放不了：一段音乐记忆都没有，检索 "
           f"{len(getattr(result, 'hits', None) or [])} 条也都没音频，"
@@ -979,7 +979,7 @@ def space_dir(name: str):
     import re as _re
     safe = _re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]", "", (name or "").strip())[:32]
     if not safe:
-        raise ValueError("空间名字不能为空")
+        raise ValueError("Space name cannot be empty")
     return _ROOT / "voicemem_memoryspace" / safe, safe
 
 
@@ -993,7 +993,7 @@ def get_space(name: str):
         inst = VoiceMem.from_config(cfg)
         inst.warmup(verbose=False)
         _SPACES[safe] = inst
-        print(f"[space] 打开「{safe}」用了 {time.monotonic()-t0:.1f}s", flush=True)
+        print(f"[space] Opened {safe} in {time.monotonic()-t0:.1f}s", flush=True)
     return _SPACES[safe]
 
 
@@ -1042,12 +1042,12 @@ def create_space(name: str, language: str = "") -> dict:
     """
     d, safe = space_dir(name)
     if d.exists() and any(d.iterdir()):
-        raise FileExistsError(f"「{safe}」已经存在了")
+        raise FileExistsError(f"Space {safe} already exists")
     d.mkdir(parents=True, exist_ok=True)
     get_space(safe)                      # 建库 + 预热
     lang = "zh" if str(language or ARGS.lang).lower().startswith("zh") else "en"
     _write_space_language(safe, lang)    # 建的时候定一次，之后不再变
-    print(f"[space] 新建「{safe}」（语言 {lang}）→ {d}", flush=True)
+    print(f"[space] Created {safe} (language {lang}) -> {d}", flush=True)
     return {"id": safe, "name": safe, "count": 0, "language": lang}
 
 
