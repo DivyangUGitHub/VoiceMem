@@ -13,14 +13,18 @@ import sys
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from production.health import readiness
+from production.observability import Metrics, Observability, configure_logging
 from production.security import SecurityMiddleware, Settings
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 FRONTEND = ROOT / "frontend" / "out"
+
+configure_logging()
 
 # Fail in a second on bad configuration, not after the models have loaded.
 settings = Settings.from_env()
@@ -41,7 +45,10 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/openapi.json" if docs else None,
 )
+metrics = Metrics()
+# Last added = outermost: observability sees the final status of everything, including 401/429.
 app.add_middleware(SecurityMiddleware, settings=settings)
+app.add_middleware(Observability, metrics=metrics)
 
 
 @app.get("/healthz", include_in_schema=False)
@@ -51,12 +58,15 @@ def healthz():
 
 @app.get("/readyz", include_in_schema=False)
 def readyz():
-    if not FRONTEND.is_dir() or not (FRONTEND / "index.html").is_file():
-        return JSONResponse(
-            {"status": "not_ready", "reason": "frontend build is missing"},
-            status_code=503,
-        )
-    return JSONResponse({"status": "ready"})
+    memory_root = Path(os.environ.get("VOICEMEM_MEMORYSPACE_ROOT", ROOT / "voicemem_memoryspace"))
+    ready, checks = readiness(FRONTEND, memory_root)
+    body = {"status": "ready" if ready else "not_ready", "checks": checks}
+    return JSONResponse(body, status_code=200 if ready else 503)
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics_endpoint():
+    return PlainTextResponse(metrics.render(), media_type="text/plain; version=0.0.4")
 
 
 # Keep every existing VoiceMem endpoint and WebSocket intact.

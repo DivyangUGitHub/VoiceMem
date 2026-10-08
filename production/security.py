@@ -6,7 +6,7 @@ the research runtime under ``web/`` and can be tested without loading any model.
 
 Policy
 ------
-* ``/backend/**``, ``/api-docs`` and ``/openapi.json`` need a credential.
+* ``/backend/**``, ``/metrics``, ``/api-docs`` and ``/openapi.json`` need a credential.
   Everything else (static frontend, ``/healthz``, ``/readyz``, ``/auth/*``) is public.
 * Credential = signed session cookie (browser login), ``Authorization: Bearer <key>``
   or ``X-API-Key`` (scripts). Keys come from ``VOICEMEM_API_KEYS`` (comma separated).
@@ -36,7 +36,7 @@ log = logging.getLogger("voicemem.security")
 COOKIE = "vm_session"
 SESSION_TTL_S = 12 * 3600
 MIN_KEY_LEN = 16
-PROTECTED = ("/backend", "/api-docs", "/openapi.json")
+PROTECTED = ("/backend", "/api-docs", "/openapi.json", "/metrics")
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 _HOST_RE = re.compile(r"^[A-Za-z0-9.\-:\[\]]{1,255}$")
 
