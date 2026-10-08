@@ -56,8 +56,8 @@ def _parse(argv):
     p = argparse.ArgumentParser(description="voicemem web demo（脑图 + 0–300ms 投机预取）")
     p.add_argument("--mode", choices=["llm_tts", "realtime"],
                    default=os.environ.get("DEMO_MODE", "realtime"),
-                   help="回复控制流：realtime=OpenAI 原生语音（默认，体验最好）；"
-                        "llm_tts=LLM 流→TTS 流（不需要 Realtime 权限，可换本地 TTS）")
+                   help="Reply flow：realtime=OpenAI 原生语音（default; best experience）；"
+                        "llm_tts=LLM 流→TTS 流（does not require Realtime access; local TTS can be used）")
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--port", type=int, default=int(os.environ.get("VOICEMEM_PORT", 8787)))
     p.add_argument("--spec_min_chars", type=int, default=6,
@@ -129,7 +129,7 @@ TURN_DETECTION = os.environ.get("TURN_DETECTION", "semantic_vad")
 #: semantic_vad 的抢答倾向：low 更愿意等你说完，high 更爱抢。
 VAD_EAGERNESS = os.environ.get("VAD_EAGERNESS", "low")
 MIC_RATE = 24000                       # 前端上行的采样率（index.html 的 SAMPLE_RATE）
-#: 按声纹拦陌生人。默认开——启动时预热过、又在后台线程算，实测对延迟零影响
+#: 按声纹拦陌生人。默认开——启动时Warm up过、又在后台线程算，实测对延迟零影响
 #: （memory_hits 仍在 EOU 前 0.63s 到达，跟关掉时一样）。
 SPEAKER_GATE = os.environ.get("VOICEMEM_SPEAKER_GATE", "1") != "0"   # 打断为什么没触发：看这几行日志
 #: 连续几轮认成别人才判"陌生人"。1 = 一轮就翻脸（demo 里演"换个人说话"要的就是
@@ -356,7 +356,7 @@ LAST_TUNE_TTL_S = float(os.environ.get("VOICEMEM_LAST_TUNE_TTL", "1800"))
 
 def _remember_tune(audio_path: str) -> None:
     _LAST_TUNE.update(path=str(audio_path or ""), at=time.monotonic())
-    print(f"  [replay] 记住这段音乐：{audio_path}", flush=True)
+    print(f"  [replay] Saved this music recording：{audio_path}", flush=True)
 
 
 def _last_tune_path() -> str:
@@ -660,10 +660,10 @@ def _stitch(memory_ids: list) -> str:
         sf.write(out, np.concatenate(chunks), sr0)
         _STITCH_CACHE[key] = str(out)
         total = sum(len(c) for c in chunks) / float(sr0 or 16000)
-        print(f"  [replay] 拼好 {len(paths)} 段 → {total:.1f}s", flush=True)
+        print(f"  [replay] Combined {len(paths)} 段 → {total:.1f}s", flush=True)
         return str(out)
     except Exception as e:
-        print(f"  [replay] 拼接失败，只放第一段：{type(e).__name__}: {e}", flush=True)
+        print(f"  [replay] Combine failed; playing only the first recording：{type(e).__name__}: {e}", flush=True)
         return paths[0]
 
 
@@ -760,18 +760,18 @@ def _replay_id(text: str, result) -> str:
             else:
                 print(f"  [replay] Only {len(cand)} recordings exist in that period; no #{nth} recording", flush=True)
                 return ""
-            print(f"  [replay] 按条件挑中 {pick['id'][:12]}（{pick['at']:%m-%d %H:%M}"
+            print(f"  [replay] Selected by conditions {pick['id'][:12]}（{pick['at']:%m-%d %H:%M}"
                   f"{' / ' + place if place else ''}"
                   f"{' / 第 %d 首' % nth if nth else ''}，共 {len(cand)} 首）", flush=True)
             return _group_id(_same_song_group(pool, pick))
-        print(f"  [replay] 池里 {len(pool)} 段音乐，没有符合条件的"
+        print(f"  [replay] Among {len(pool)} 段音乐，no recording matched the conditions"
               f"（{'时间 %s~%s ' % (window[0], window[1]) if window else ''}"
               f"{'地点 ' + place if place else ''}）", flush=True)
         return ""
 
     if pool:
         pick = max(_prefer_sound_only(pool), key=lambda x: x["at"])
-        print(f"  [replay] 没说条件，放最近的 {pick['id'][:12]}"
+        print(f"  [replay] No conditions specified; playing the most recent {pick['id'][:12]}"
               f"（{pick['at']:%m-%d %H:%M}）", flush=True)
         return _group_id(_same_song_group(pool, pick))
 
@@ -784,7 +784,7 @@ def _replay_id(text: str, result) -> str:
     if _last_tune_path():
         print("  [replay] Not indexed yet; playing the most recently heard recording", flush=True)
         return LAST_TUNE_ID
-    print(f"  [replay] 放不了：一段音乐记忆都没有，检索 "
+    print(f"  [replay] Cannot play: no music memories; retrieved "
           f"{len(getattr(result, 'hits', None) or [])} 条也都没音频，"
           f"缓存 path={_LAST_TUNE.get('path') or '(空)'}", flush=True)
     return ""
@@ -970,7 +970,7 @@ REPLY = CONFIG.get("reply")                           # 传给 utils 的回复�
 #: 每个 Memory Space 一个 VoiceMem 实例，按需建、建好留着。
 #:
 #: 同一进程内建第二个实例几乎不花钱：模型是懒加载 + 进程内复用的，实测建实例
-#: 0.0s、预热 2.5s（第一个是 6.8s + 4.9s）。所以切换空间不用重启服务。
+#: 0.0s、Warm up 2.5s（第一个是 6.8s + 4.9s）。所以切换空间不用重启服务。
 _SPACES: dict = {}
 
 
@@ -1037,14 +1037,14 @@ def list_spaces() -> list:
 def create_space(name: str, language: str = "") -> dict:
     """建一个新的空 Memory Space：磁盘上出现这个名字的文件夹，里面是全新的空库。
 
-    实例这里就建出来（顺带预热），这样点完"创建"立刻就能对话，不用等第一句话
+    实例这里就建出来（顺带Warm up），这样点完"创建"立刻就能对话，不用等第一句话
     卡在模型加载上。
     """
     d, safe = space_dir(name)
     if d.exists() and any(d.iterdir()):
         raise FileExistsError(f"Space {safe} already exists")
     d.mkdir(parents=True, exist_ok=True)
-    get_space(safe)                      # 建库 + 预热
+    get_space(safe)                      # 建库 + Warm up
     lang = "zh" if str(language or ARGS.lang).lower().startswith("zh") else "en"
     _write_space_language(safe, lang)    # 建的时候定一次，之后不再变
     print(f"[space] Created {safe} (language {lang}) -> {d}", flush=True)
@@ -1076,7 +1076,7 @@ def save_turn_audio(pcm16k) -> str:
         sf.write(path, np.asarray(pcm16k, dtype="float32"), 16000)
         return str(path)
     except Exception as e:
-        print(f"[web] 存本轮音频失败（不影响对话）：{e}", flush=True)
+        print(f"[web] Failed to save turn audio (non-blocking)：{e}", flush=True)
         return ""
 
 
@@ -1224,12 +1224,12 @@ def _kick_acoustic(send, audio_path: str) -> None:
             emo, score = await asyncio.to_thread(_acoustic_emotion, audio_path)
             take = bool(emo) and score >= ACOUSTIC_MIN_SCORE and emo in ACOUSTIC_TRUST
             if BARGE_DEBUG:
-                print(f"  [emotion] 声学(后台) {(time.monotonic()-t0)*1000:.0f}ms "
+                print(f"  [emotion] Acoustic (background) {(time.monotonic()-t0)*1000:.0f}ms "
                       f"-> {emo or '-'} {score:.2f}（{'采纳' if take else '不采纳'}）", flush=True)
             if take:
                 await send({"type": "tag_update", "emotion": emo, "emotion_from": "acoustic"})
         except Exception as e:
-            print(f"[web] 后台声学情绪跳过：{type(e).__name__}: {e}", flush=True)
+            print(f"[web] Skipped background acoustic emotion：{type(e).__name__}: {e}", flush=True)
 
     asyncio.create_task(run())
 
@@ -1278,7 +1278,7 @@ def fill_tags(payload: dict, text: str, audio_path: str = "",
                 payload["emotion"] = emo
                 payload["emotion_from"] = "semantic"
         except Exception as e:
-            print(f"[web] 语义情绪跳过：{type(e).__name__}: {e}", flush=True)
+            print(f"[web] Skipped semantic emotion：{type(e).__name__}: {e}", flush=True)
 
     # ③ 声学（emotion2vec+）：只在它**很有把握**时才盖过上面的判断。
     #
@@ -1302,7 +1302,7 @@ def fill_tags(payload: dict, text: str, audio_path: str = "",
                       f"-> {emo or '-'} {score:.2f}（{why}）"
                       f"  最终={payload.get('emotion') or '-'}", flush=True)
         except Exception as e:
-            print(f"[web] 声学情绪跳过：{type(e).__name__}: {e}", flush=True)
+            print(f"[web] Skipped acoustic emotion：{type(e).__name__}: {e}", flush=True)
 
     # 实体：这里**不猜**。
     #
@@ -1316,7 +1316,7 @@ def fill_tags(payload: dict, text: str, audio_path: str = "",
 
     rb = payload.get("right_brain_hits") or []
     inner = sum(1 for h in rb if h.get("internal"))
-    print(f"[hits] 左脑 {len(payload.get('left_brain') or [])} 条  "
+    print(f"[hits] Left brain {len(payload.get('left_brain') or [])}  items  "
           f"右脑 {len(rb)} 条(内部 {inner}，页面显示 {len(rb)-inner})  "
           f"情绪={payload.get('emotion') or '-'}  "
           f"实体={'、'.join(payload.get('entities') or []) or '-'}", flush=True)
@@ -1397,7 +1397,7 @@ async def voicemem_llm_tts(pending, send, send_audio, owner, timeline,
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
-                    print(f"[web] 合成失败：{type(e).__name__}: {e}", flush=True)
+                    print(f"[web] Synthesis failed：{type(e).__name__}: {e}", flush=True)
                 finally:
                     await chunks.put(None)        # 出错也要让播放那边收工
 
@@ -1432,7 +1432,7 @@ async def voicemem_llm_tts(pending, send, send_audio, owner, timeline,
                 raise
             except Exception as e:                # 多半是听到一半关了页面，不是错误
                 timeline.finish_segment(segment_id, complete=False)
-                print(f"[web] 语音发送中断：{type(e).__name__}", flush=True)
+                print(f"[web] voice send interrupted：{type(e).__name__}", flush=True)
                 break
             else:
                 timeline.finish_segment(
@@ -1522,7 +1522,7 @@ async def voicemem_llm_tts(pending, send, send_audio, owner, timeline,
     # 记录本轮上下文；记忆写入放到后台，避免阻塞下一轮收音。
     context_reply = timeline.heard_text() if interrupted else reply
     if interrupted and BARGE_DEBUG:
-        print(f"[context] 打断于 {timeline.rendered_ms()}ms，保留回复 "
+        print(f"[context] Interrupted at {timeline.rendered_ms()}ms，preserving reply "
               f"{context_reply!r}", flush=True)
     history_turn_id = _push_history(
         context_session, context_space, pending.text, context_reply,
@@ -1659,7 +1659,7 @@ def remember_turn(pending, reply: str, owner: dict, history_turn_id: str = "",
             on_complete=lambda result: _finish_history_turn(history_turn_id, result),
         ) or {}
     except Exception as e:
-        print(f"[web] 存这一轮失败：{type(e).__name__}: {e}", flush=True)
+        print(f"[web] Failed to store this turn：{type(e).__name__}: {e}", flush=True)
         return
     # 上一轮的情绪留给下一轮的投机检索用。没有它右脑取不到情感记录，
     # 每轮只会返回同样那几条静态画像（见 voicemem/stream.py 的 emotion 说明）。
@@ -1673,7 +1673,7 @@ def remember_turn(pending, reply: str, owner: dict, history_turn_id: str = "",
     if r.get("recognized_tune") and pending.audio_path:
         _remember_tune(pending.audio_path)
     elif BARGE_DEBUG and _wants_sound(pending.text or ""):
-        print(f"  [replay] 这一轮没记住音乐："
+        print(f"  [replay] Music was not stored for this turn："
               f"tune={bool(r.get('recognized_tune'))} audio={bool(pending.audio_path)}",
               flush=True)
 
@@ -1700,12 +1700,12 @@ async def _remember_background(pending, reply: str, owner: dict,
     async with _REMEMBER_LOCK:
         waited = time.monotonic() - queued_at
         if waited > 0.05 and BARGE_DEBUG:
-            print(f"[memory] 入库排队 {waited:.2f}s", flush=True)
+            print(f"[memory] Memory ingest queued {waited:.2f}s", flush=True)
         started = time.monotonic()
         await asyncio.to_thread(
             remember_turn, pending, reply, owner, history_turn_id, memory_vm)
         if BARGE_DEBUG:
-            print(f"[memory] 入库主流程 {time.monotonic()-started:.2f}s", flush=True)
+            print(f"[memory] Memory ingest main flow {time.monotonic()-started:.2f}s", flush=True)
 
 
 def queue_remember_turn(pending, reply: str, owner: dict,
@@ -1722,7 +1722,7 @@ def queue_remember_turn(pending, reply: str, owner: dict,
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            print(f"[web] 后台记忆任务失败：{type(e).__name__}: {e}", flush=True)
+            print(f"[web] Background memory task failed：{type(e).__name__}: {e}", flush=True)
 
     task.add_done_callback(done)
 
@@ -1871,7 +1871,7 @@ async def anticipate(sock, on_frame=None, on_speech=None, owner=None, is_busy=No
     所以助手说话期间先不发 partial，等转写真的多出几个字（确认是人在插话，
     见 BARGE_MIN_CHARS）之后再放行。
     on_candidate()/on_candidate_reject()：疑似插话时可恢复地暂停/恢复播放；只有
-    on_speech() 才是确认打断。"""
+    on_speech() 才是confirmed interruption。"""
     stream = vm.stream(spec_min_chars=SPEC_MIN_CHARS, gamble_s=GAMBLE_S, confirm_s=CONFIRM_S)
     last_partial = ""
     if owner is None:
@@ -1921,7 +1921,7 @@ async def anticipate(sock, on_frame=None, on_speech=None, owner=None, is_busy=No
             candidate_silence = 0.0
             candidate_age = 0.0
             if BARGE_DEBUG:
-                print("[barge] 疑似插话 → 暂停播放，等待 ASR 确认", flush=True)
+                print("[barge] Possible interruption -> pausing playback; waiting for ASR confirmation", flush=True)
             if on_candidate:
                 await on_candidate()
 
@@ -1944,7 +1944,7 @@ async def anticipate(sock, on_frame=None, on_speech=None, owner=None, is_busy=No
                 barge_base = len(cur)
                 if BARGE_DEBUG:
                     why = "明确停止指令" if _is_explicit_interrupt(cur) else "转写连续稳定增长"
-                    print(f"[barge] {why} → 确认打断：{cur[-16:]!r}", flush=True)
+                    print(f"[barge] {why} → confirmed interruption：{cur[-16:]!r}", flush=True)
                 if on_speech:
                     await on_speech()
             elif ((candidate_silence * 1000 >= BARGE_REJECT_SILENCE_MS and not cur)
@@ -1953,7 +1953,7 @@ async def anticipate(sock, on_frame=None, on_speech=None, owner=None, is_busy=No
                 candidate = False
                 discard_candidate_turn = True
                 if BARGE_DEBUG:
-                    print("[barge] 疑似声音没有形成文字 → 恢复播放", flush=True)
+                    print("[barge] Possible non-speech sound -> resuming playback", flush=True)
                 if on_candidate_reject:
                     await on_candidate_reject()
         # 助手正在说话时，ASR 里多半混着它自己的回声，那些字不能显示——用户会看见
@@ -1974,7 +1974,7 @@ async def anticipate(sock, on_frame=None, on_speech=None, owner=None, is_busy=No
                 last_partial = ""
                 barge_base = 0
                 if BARGE_DEBUG:
-                    print(f"[barge] 丢弃未确认的声音回合：{st.turn.text!r}", flush=True)
+                    print(f"[barge] Discarding unconfirmed speech turn：{st.turn.text!r}", flush=True)
                 continue
 
             if candidate and not barged:
@@ -1993,12 +1993,12 @@ async def anticipate(sock, on_frame=None, on_speech=None, owner=None, is_busy=No
                 if confirmed:
                     barged = True
                     if BARGE_DEBUG:
-                        print(f"[barge] 完整回合确认插话：{final_text!r}", flush=True)
+                        print(f"[barge] Confirmed interruption from complete turn：{final_text!r}", flush=True)
                     if on_speech:
                         await on_speech()
                 else:
                     if BARGE_DEBUG:
-                        print(f"[barge] 完整回合判为附和/回声/噪声 → 恢复：{final_text!r}",
+                        print(f"[barge] Complete turn classified as backchannel/echo/noise -> resuming：{final_text!r}",
                               flush=True)
                     if on_candidate_reject:
                         await on_candidate_reject()
@@ -2013,7 +2013,7 @@ async def anticipate(sock, on_frame=None, on_speech=None, owner=None, is_busy=No
             # 我们正在放录音，而这一轮一个字都没转出来：那是自己的声音绕回来了。
             if _replaying_now() and not (st.turn.text or "").strip():
                 if BARGE_DEBUG:
-                    print("[replay] 回放期间的空白一轮，是自己的回声，丢掉", flush=True)
+                    print("[replay] Blank turn during replay was our own echo; dropping it", flush=True)
                 last_partial = ""
                 barge_base = 0
                 barged = False
@@ -2146,11 +2146,11 @@ async def llm_tts_session(sock):
         since = (time.monotonic() - turn["t0"]) * 1000 if turn["t0"] else 0.0
         if not force and turn["t0"] and since < BARGE_GRACE_MS:
             if BARGE_DEBUG:
-                print(f"[barge] 才说了 {since:.0f}ms，还在宽限期内，不打断", flush=True)
+                print(f"[barge] Only {since:.0f}ms，still within grace period; not interrupting", flush=True)
             return
         if BARGE_DEBUG:
             left = max(0.0, turn["until"] - time.monotonic()) * 1000
-            print(f"[barge] ★ 打断：转写触发（前端还剩 {left:.0f}ms 没播完）", flush=True)
+            print(f"[barge] ★ Interrupt: transcript triggered（前端还剩 {left:.0f}ms 没播完）", flush=True)
         task = turn["task"]
         timeline = turn["timeline"]
         heard_text = timeline.heard_text() if timeline else ""
@@ -2184,7 +2184,7 @@ async def llm_tts_session(sock):
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            print(f"[web] 回复收尾失败：{type(e).__name__}: {e}", flush=True)
+            print(f"[web] Failed to finalize reply：{type(e).__name__}: {e}", flush=True)
 
     async for pending in _session_anticipate(
             context_session, sock, on_speech=stop_reply, owner=owner,
@@ -2242,7 +2242,7 @@ async def llm_tts_session(sock):
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                print(f"[web] 回复任务失败：{type(e).__name__}: {e}", flush=True)
+                print(f"[web] Reply task failed：{type(e).__name__}: {e}", flush=True)
 
         task.add_done_callback(reply_done)
 
@@ -2344,7 +2344,7 @@ async def realtime_session(sock):
                 if interrupted:
                     reply = timeline.heard_text() if timeline else ""
                     if BARGE_DEBUG and timeline:
-                        print(f"[context] 打断于 {timeline.rendered_ms()}ms，保留回复 "
+                        print(f"[context] Interrupted at {timeline.rendered_ms()}ms，preserving reply "
                               f"{reply!r}", flush=True)
                 history_turn_id = _push_history(
                     context_session, space, p.text, reply,
@@ -2513,11 +2513,11 @@ async def realtime_session(sock):
                 since = (time.monotonic() - turn["t0"]) * 1000
                 if since < BARGE_GRACE_MS:
                     if BARGE_DEBUG:
-                        print(f"[barge] 才说了 {since:.0f}ms，还在宽限期内，不打断", flush=True)
+                        print(f"[barge] Only {since:.0f}ms，still within grace period; not interrupting", flush=True)
                     return
                 if BARGE_DEBUG:
                     left = max(0.0, turn["until"] - time.monotonic()) * 1000
-                    print(f"[barge] ★ 打断：转写触发（前端还剩 {left:.0f}ms 没播完）",
+                    print(f"[barge] ★ Interrupt: transcript triggered（前端还剩 {left:.0f}ms 没播完）",
                           flush=True)
                 active_response = not response_idle.is_set()
                 timeline = turn["timeline"]
@@ -3116,13 +3116,13 @@ app = utils.build_app(MODE, realtime_session if MODE == "realtime" else llm_tts_
 
 
 if __name__ == "__main__":
-    print(f"[web] mode={MODE} spec≥{SPEC_MIN_CHARS}字 gamble={ARGS.gamble_ms}ms "
+    print(f"[web] mode={MODE} spec≥{SPEC_MIN_CHARS} chars, gamble={ARGS.gamble_ms}ms "
           f"confirm={ARGS.confirm_ms}ms -> http://localhost:{ARGS.port}/", flush=True)
-    # 全部预热在这儿做完，别让第一句话去等模型加载。ASR(FunASR paraformer)
+    # 全部Warm up在这儿做完，别让第一句话去等模型加载。ASR(FunASR paraformer)
     # 是懒加载的，等用户开口才拉起来要好几秒——那几秒的音频堆在 socket 缓冲里，
     # 追赶时逐帧喂 VAD，静音会瞬间累计过 confirm_ms，第一句直接被截断（听感就是
     # "第一句又慢又不准"）。
-    print("[web] 预热本地模型（embedding / ASR / VAD / 感知）…", flush=True)
+    print("[web] Warming up local models (embedding / ASR / VAD / perception)...", flush=True)
     vm.warmup(verbose=True)
-    print("[web] 就绪", flush=True)
+    print("[web] Ready", flush=True)
     uvicorn.run(app, host=ARGS.host, port=ARGS.port)
