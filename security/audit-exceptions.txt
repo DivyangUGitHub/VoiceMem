@@ -1,0 +1,4 @@
+# Known vulnerable dependencies we accept for now. The audit gate fails on anything else,
+# and fails on these too once the date passes, so they cannot be forgotten.
+# format: package | review-by (YYYY-MM-DD) | reason
+transformers | 2027-01-31 | pinned to 4.52.3 on purpose: Qwen2.5-Omni emotion attribution needs it (see pyproject.toml). Upgrading needs a GPU regression run of the right brain before release.
