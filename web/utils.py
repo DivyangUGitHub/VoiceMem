@@ -200,7 +200,7 @@ def build_app(mode, session, classify, snapshot=None, audio_of=None, spaces=None
             )
             return {"title": (r.choices[0].message.content or "").strip()}
         except Exception as e:
-            print(f"[web] 生成标题失败：{e}", flush=True)
+            print(f"[web] Failed to generate title: {e}", flush=True)
             return {"title": ""}
 
     @app.get("/api/memories")                        # 打开页面时先铺已有记忆
@@ -236,13 +236,13 @@ def build_app(mode, session, classify, snapshot=None, audio_of=None, spaces=None
             try:
                 return {"active": _use_space(name)}
             except Exception as e:
-                raise HTTPException(400, f"切不过去：{e}")
+                raise HTTPException(400, f"Could not switch space: {e}")
 
     @app.get("/api/audio/{memory_id}")               # 把当时那段原声放回来
     def api_audio(memory_id: str):
         path = audio_of(memory_id) if audio_of else None
         if not path or not Path(path).exists():
-            raise HTTPException(404, "这条记忆没有存档音频")
+            raise HTTPException(404, "This memory has no archived audio")
         return FileResponse(path, media_type="audio/wav")
 
     (HERE / "images").mkdir(exist_ok=True)
