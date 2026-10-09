@@ -1077,6 +1077,29 @@ def list_spaces() -> list:
     return out
 
 
+def purge_tenant(tenant: str) -> int:
+    """Delete everything stored for this user: memory spaces, recordings, caches.
+    Returns how many spaces were removed. Used when a user deletes their account."""
+    import shutil
+    from voicemem.lang import _by_tenant
+    from voicemem.utils.common import space as _sp
+    prefix = f"{tenant}_"
+    with _SPACES_LOCK:
+        for key in [k for k in _SPACES if k.startswith(prefix)]:
+            _SPACES.pop(key)         # shortcut: open sqlite handles are freed by GC, not closed explicitly
+    removed = 0
+    for d in _sp.root().glob(prefix + "*"):
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
+            removed += 1
+    _ACTIVE.pop(tenant, None)
+    _by_tenant.pop(tenant, None)
+    for cache in (_LAST_TUNE, _LAST_HIT_IDS, _REPLAY_UNTIL, _OWNER_NAME_CACHE):
+        for key in [k for k in cache if str(k).startswith(prefix)]:
+            cache.pop(key, None)
+    return removed
+
+
 def create_space(name: str, language: str = "") -> dict:
     """建一个新的空 Memory Space：磁盘上出现这个名字的文件夹，里面是全新的空库。
 
