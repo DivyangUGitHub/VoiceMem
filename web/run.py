@@ -980,7 +980,8 @@ def space_dir(name: str):
     safe = _re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]", "", (name or "").strip())[:32]
     if not safe:
         raise ValueError("Space name cannot be empty")
-    return _ROOT / "voicemem_memoryspace" / safe, safe
+    from voicemem.utils.common import space as _sp
+    return _sp.root() / safe, safe        # honours VOICEMEM_MEMORYSPACE_ROOT (the Docker volume)
 
 
 def get_space(name: str):
@@ -1015,7 +1016,8 @@ def use_space(name: str) -> str:
 def list_spaces() -> list:
     """磁盘上有哪些 Memory Space，各有多少条记忆。"""
     import sqlite3
-    root = _ROOT / "voicemem_memoryspace"
+    from voicemem.utils.common import space as _sp
+    root = _sp.root()
     out = []
     for d in sorted(p for p in root.glob("*") if p.is_dir()):
         n = 0

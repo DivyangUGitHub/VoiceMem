@@ -6,7 +6,6 @@
 build/
 dist/
 .pytest_cache/
-tests/
 
 # Runtime data: memory stores, evaluation results, recording archives
 
@@ -43,6 +42,7 @@ scripts/seed_*.py
 # Electron desktop shell
 
 node_modules/
+.next/
 
 # Default memory root directory (used when memory_root is not provided; defaults to the current directory)
 

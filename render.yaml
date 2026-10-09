@@ -9,6 +9,13 @@ services:
     envVars:
       - key: OPENAI_API_KEY
         sync: false
+      # Access key(s) for the app. Render prompts for it; generate with
+      #   python -c "import secrets; print(secrets.token_urlsafe(32))"
+      - key: VOICEMEM_API_KEYS
+        sync: false
+      # Render's proxy is the only way in, so trust its X-Forwarded-For for rate limiting.
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
       - key: DEMO_MODE
         value: llm_tts
       - key: VOICEMEM_MEMORYSPACE_ROOT

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { api, Memory, Space } from "../lib/api";
+import { api, AuthError, Memory, Space } from "../lib/api";
 
 type Message = { role: "user" | "assistant"; text: string };
 
@@ -9,7 +9,7 @@ function textOf(memory: Memory) {
   return memory.content || memory.text || "";
 }
 
-export default function Home() {
+function Console({ onUnauthorized, onLogout }: { onUnauthorized: () => void; onLogout: () => void }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [memories, setMemories] = useState<{ left: Memory[]; right: Memory[] }>({
     left: [],
@@ -37,9 +37,10 @@ export default function Home() {
       setSpaces(spaceState.spaces || []);
       setActiveSpace(spaceState.active || "");
     } catch (err) {
+      if (err instanceof AuthError) return onUnauthorized();
       setError(err instanceof Error ? err.message : "Unable to load VoiceMem");
     }
-  }, []);
+  }, [onUnauthorized]);
 
   const connect = useCallback(() => {
     socket.current?.close();
@@ -75,7 +76,7 @@ export default function Home() {
       if (message.type === "answer_start") {
         setBusy(true);
         setMessages((current) => {
-          const next = [...current, { role: "assistant", text: "" }];
+          const next: Message[] = [...current, { role: "assistant", text: "" }];
           assistantIndex.current = next.length - 1;
           return next;
         });
@@ -142,6 +143,7 @@ export default function Home() {
       setMessages([]);
       await loadState();
     } catch (err) {
+      if (err instanceof AuthError) return onUnauthorized();
       setError(err instanceof Error ? err.message : "Unable to switch memory space");
     }
   };
@@ -154,6 +156,7 @@ export default function Home() {
       await switchSpace(created.name);
       await loadState();
     } catch (err) {
+      if (err instanceof AuthError) return onUnauthorized();
       setError(err instanceof Error ? err.message : "Unable to create memory space");
     }
   };
@@ -190,6 +193,9 @@ export default function Home() {
           <a className="link" href="/backend/" target="_blank" rel="noreferrer">
             Open real-time voice console →
           </a>
+          <button className="secondary" style={{ width: "100%", marginTop: 9 }} onClick={onLogout}>
+            Sign out
+          </button>
         </div>
       </aside>
 
@@ -283,4 +289,66 @@ export default function Home() {
       </aside>
     </div>
   );
+}
+
+function Login({ onDone }: { onDone: () => void }) {
+  const [key, setKey] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!key.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.login(key.trim());
+      setKey("");
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="login">
+      <form className="card" onSubmit={submit}>
+        <h1>VOICEMEM</h1>
+        <p className="meta">Enter your access key to continue.</p>
+        <input
+          type="password"
+          autoComplete="current-password"
+          autoFocus
+          value={key}
+          onChange={(event) => setKey(event.target.value)}
+          placeholder="Access key"
+          aria-label="Access key"
+        />
+        <button type="submit" disabled={busy || !key.trim()}>
+          {busy ? "Signing in…" : "Sign in"}
+        </button>
+        {error && <div className="error" role="alert">{error}</div>}
+      </form>
+    </main>
+  );
+}
+
+export default function Home() {
+  // null = still checking, false = needs login
+  const [authed, setAuthed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    api.me().then(setAuthed, () => setAuthed(false));
+  }, []);
+
+  const lost = useCallback(() => setAuthed(false), []);
+  const logout = useCallback(async () => {
+    await api.logout();
+    setAuthed(false);
+  }, []);
+
+  if (authed === null) return null;
+  return authed ? <Console onUnauthorized={lost} onLogout={logout} /> : <Login onDone={() => setAuthed(true)} />;
 }

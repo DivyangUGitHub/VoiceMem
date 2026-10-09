@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   frontend:
     runs-on: ubuntu-latest
@@ -20,7 +27,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: pnpm install --no-frozen-lockfile
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
   python:
@@ -30,4 +39,39 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python -m compileall -q production
+          cache: pip
+      # The tests only need the web layer, not torch or the models, so this stays fast.
+      - name: Install test tooling
+        run: |
+          pip install numpy fastapi uvicorn pydantic httpx pytest ruff
+          pip install --no-deps -e .
+      - run: ruff check .
+      - run: python -m pytest -q
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pip-audit
+      # Fails on any vulnerable pin except the dated ones in security/audit-exceptions.txt.
+      - run: |
+          pip-audit -r requirements.lock --no-deps --disable-pip -f json > audit.json || true
+          python scripts/audit_gate.py < audit.json
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [frontend, python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # CPU-only torch keeps the CI image small; production can build with the default index.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          build-args: TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

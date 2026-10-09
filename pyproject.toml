@@ -53,6 +53,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Test and quality tooling: pip install -e ".[dev]"
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",        # starlette TestClient
+    "ruff>=0.6",
+    "pip-audit",
+]
 rtc = [
     "av>=14",
 ]
@@ -89,3 +96,20 @@ include = ["voicemem*"]
 # the first example after pip installation can fail with LibsndfileError, which is a poor first impression.
 # voicemem.sample_audio() first checks the repository assets and falls back to the packaged copy.
 "*" = ["data/*.txt", "*.txt", "assets/*.wav"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning:starlette.testclient"]
+
+# Repo-wide gate: only things that are bugs (syntax errors, undefined names).
+# The stricter set below runs on code written for production (see CI).
+[tool.ruff]
+line-length = 120
+extend-exclude = ["docs", "frontend", "voicemem_memoryspace"]
+
+[tool.ruff.lint]
+select = ["E9", "F821", "F822", "F823", "F63", "F7"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501", "SIM117"]

@@ -29,6 +29,22 @@ from voicemem.leftbrain.cognitive_graph import (
 )
 from voicemem.llm_config import resolve_base_url
 
+
+@dataclass(frozen=True)
+class GraphMemoryContext:
+    """Relation context for one memory. ``relations`` stays empty until a graph store supplies it."""
+
+    memory_id: str
+    relations: tuple = ()
+
+
+@dataclass(frozen=True)
+class GraphSearchHit:
+    """A vector hit plus its graph context, the shape ``utils/fusion/left_channel`` consumes."""
+
+    memory: Any
+    graph: GraphMemoryContext
+
 _DEFAULT_JSON_NAME = "memories.json"
 _DEFAULT_COGNITIVE_DB_NAME = "cognitive_graph.sqlite"
 
@@ -314,7 +330,8 @@ class LeftBrainMemoryRepository:
     ) -> list[GraphSearchHit]:
         """语义检索后附加本地图关系上下文。"""
         hits = self.search(query, user_id=user_id, top_k=top_k, threshold=threshold)
-        if self._graph_store is None:
+        enrich = getattr(self._graph_store, "enrich_hits", None)
+        if enrich is None:  # no graph store, or one without relation enrichment: plain hits
             return [
                 GraphSearchHit(
                     memory=h,
@@ -322,7 +339,7 @@ class LeftBrainMemoryRepository:
                 )
                 for h in hits
             ]
-        return self._graph_store.enrich_hits(
+        return enrich(
             hits,
             user_id=user_id,
             relation_depth=relation_depth,
