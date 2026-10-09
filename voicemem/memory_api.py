@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import threading
 from typing import Any
+from voicemem.utils.common import tenant as _tenant
 
 
 def build_memory_context(result: Any, max_rb: int = 5) -> str:
@@ -119,7 +120,7 @@ class Memory:
                 self._vm.Ingest(text, speaker=speaker, **ingest_kwargs)
             except Exception as e:  # noqa: BLE001 -- background, nothing to propagate to
                 print(f"[voicemem] background remember() failed: {e}", flush=True)
-        threading.Thread(target=_run, daemon=True).start()
+        _tenant.thread(_run).start()
 
     def flush(self) -> None:
         """Optional: call when a conversation formally ends -- runs the

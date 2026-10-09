@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from voicemem.utils.common import tenant as _tenant
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
@@ -398,8 +399,8 @@ class LeftBrainMemoryRepository:
             return self._experience_repo.retrieve(plan)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            fut_left  = pool.submit(_left)
-            fut_right = pool.submit(_right)
+            fut_left  = _tenant.submit(pool, _left)
+            fut_right = _tenant.submit(pool, _right)
             left_hits, trace = fut_left.result()
             right_context    = fut_right.result()
 

@@ -34,6 +34,7 @@ from __future__ import annotations
 from voicemem.utils.common import space as _space
 
 import functools
+from voicemem.utils.common import tenant as _tenant
 import inspect
 import os
 import time
@@ -894,8 +895,8 @@ class Orchestrator:
         agent_reply = self.last_agent_reply()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            rb_future = pool.submit(
-                self._right.search, query, activated_names, emotion, top_k, agent_reply,
+            rb_future = _tenant.submit(
+                pool, self._right.search, query, activated_names, emotion, top_k, agent_reply,
             )                                            # 右脑并发开跑
 
             hits = self._left.rank(query, final_ids, top_k, speaker_filter=speaker_filter)
@@ -1175,10 +1176,8 @@ class Orchestrator:
         }
 
         if self._clap_memory_enabled() and audio_path is not None:
-            threading.Thread(
-                target=self._finish_clap_environment,
-                args=(audio_path, text, session_id, environment_hint),
-                daemon=True,
+            _tenant.thread(
+                self._finish_clap_environment, audio_path, text, session_id, environment_hint,
             ).start()
 
         def _notify_complete(result: dict) -> None:
@@ -1207,7 +1206,7 @@ class Orchestrator:
                           f"{traceback.format_exc()}", flush=True)
                     _notify_complete({"error": str(e), "persistent_memory_created": False})
 
-            threading.Thread(target=_bg, daemon=True).start()
+            _tenant.thread(_bg).start()
             return {
                 "facts_count":         None,
                 "memory_ids":          [],
@@ -1424,7 +1423,7 @@ class Orchestrator:
         )
 
         # 异步清洁：每多 50 条 heartnote 触发一次
-        threading.Thread(target=self._check_and_cleanup, daemon=True).start()
+        _tenant.thread(self._check_and_cleanup).start()
         # 异步清洁：原声定期归档，每天最多跑一次，删除超过 30 天的 WAV 文件本体
         threading.Thread(target=self._check_and_cleanup_audio, daemon=True).start()
 
