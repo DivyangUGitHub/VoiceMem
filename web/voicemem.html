@@ -445,6 +445,7 @@ button{cursor:pointer;background:none;border:none}
 <div id="toast"></div>
 
 <script>
+const BASE=location.pathname.replace(/\/[^/]*$/,'');   // '' at /, '/backend' behind the production app
 /* 脚本一抛错，后面所有 addEventListener 就都挂不上——表现是"按钮点了没反应"，
    而页面看起来完全正常。这种事已经发生过两次（一次是 $('spaceList') 取不到，
    一次是变量遮蔽），每次都得让人去开 F12 才看得见。
@@ -1094,7 +1095,7 @@ function selectSession(id){
 /* 把后端列出的空间并进 SPACES。已有的（demo 这种带演示脚本的）只更新条数。 */
 async function loadSpaces(){
   try{
-    const r=await fetch('/api/spaces'); if(!r.ok) return;
+    const r=await fetch(BASE+'/api/spaces'); if(!r.ok) return;
     const d=await r.json();
     for(const it of (d.spaces||[])){
       if(!SPACES[it.id]){
@@ -1163,7 +1164,7 @@ if($('spaceMask')) $('spaceMask').addEventListener('click',e=>{
 
 /* 新建一个空的 Memory Space —— 磁盘上出现这个名字的文件夹，记忆从零开始长 */
 async function createSpace(name, language){
-  const r=await fetch('/api/spaces',{method:'POST',
+  const r=await fetch(BASE+'/api/spaces',{method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({name, language:language||'en'})});
   if(!r.ok){
@@ -1184,7 +1185,7 @@ async function switchSpace(id){
   if(!id || id===activeSpace) return;
   toast(i18n('switching', SPACES[id]?SPACES[id].name:id));
   try{
-    const r=await fetch('/api/spaces/'+encodeURIComponent(id)+'/use',{method:'POST'});
+    const r=await fetch(BASE+'/api/spaces/'+encodeURIComponent(id)+'/use',{method:'POST'});
     if(!r.ok){ toast(i18n('switchFailed')); return; }
   }catch(e){ toast(i18n('switchFailed')); return; }
   activeSpace=id;
@@ -1446,7 +1447,7 @@ $('dlBtn').addEventListener('click',async()=>{
     toast(i18n('downloadedChat')); return;
   }
   let left=sp.left, right=sp.right;
-  try{ const r=await fetch('/api/memories?space='+sp.id);
+  try{ const r=await fetch(BASE+'/api/memories?space='+sp.id);
        if(r.ok){ const m=await r.json(); left=m.left||left; right=m.right||right; } }catch(e){}
   const out={exported_at:new Date().toISOString(), space:sp.id, space_name:sp.name};
   if(scope!=='right') out.left_brain=left;
@@ -1595,7 +1596,7 @@ const params=new URLSearchParams(location.search);
 // 开的端口，页面打得开、一点「开始对话」就连不上。
 // ?ws=host:port 仍可手动指定（前后端分开跑时用）。
 const WS_HOST=params.get('ws')||location.host||'localhost:8787';
-const WS_URL=(location.protocol==='https:'?'wss://':'ws://')+WS_HOST+'/ws';
+const WS_URL=(location.protocol==='https:'?'wss://':'ws://')+WS_HOST+BASE+'/ws';
 const SAMPLE_RATE=24000;          // 必须和 run.py 的 MIC_RATE 一致
 let ws=null, live=false, paused=false;
 
@@ -1634,7 +1635,7 @@ function beginPcmOutput(outputId,sampleRate=SAMPLE_RATE){
 function initPcmPlayer(){
   if(pcmReady||!playCtx) return pcmReady;
   if(!playCtx.audioWorklet){ pcmWorkletFailed=true; return Promise.resolve(); }
-  pcmReady=playCtx.audioWorklet.addModule('/pcm-player-worklet.js').then(()=>{
+  pcmReady=playCtx.audioWorklet.addModule(BASE+'/pcm-player-worklet.js').then(()=>{
     pcmNode=new AudioWorkletNode(playCtx,'voicemem-pcm-player',{outputChannelCount:[1]});
     pcmNode.connect(playCtx.destination);
     pcmNode.port.onmessage=e=>{
@@ -1817,7 +1818,7 @@ async function loadMemories(){
   ensureSpaceObj(activeSpace);
   let m;
   try{
-    const r=await fetch('/api/memories');
+    const r=await fetch(BASE+'/api/memories');
     if(!r.ok) return;
     m=await r.json();
   }catch(e){ return; }
@@ -2205,7 +2206,7 @@ function releaseMic(){ clearTimeout(replayTimer); replaying=false; }
 async function playMemoryClip(id){
   if(!id) return;
   try{
-    const r=await fetch('/api/audio/'+encodeURIComponent(id));
+    const r=await fetch(BASE+'/api/audio/'+encodeURIComponent(id));
     if(!r.ok){ console.warn('[replay] 取录音失败', id, r.status); return; }
     const ctx=ensurePlayback();
     const buf=await ctx.decodeAudioData(await r.arrayBuffer());
@@ -2230,7 +2231,7 @@ async function titleFor(s){
   s.titled=true;
   try{
     const text=s.turns.map(t=>t.text).join('\n');
-    const r=await fetch('/api/title',{method:'POST',
+    const r=await fetch(BASE+'/api/title',{method:'POST',
       headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
     if(!r.ok) return;
     const j=await r.json();
@@ -2308,7 +2309,7 @@ if($('langSel')){
     buildGraph(activeSpace);           // 脑图上那十个分区标签只在重建时才会换语言
     loadMemories();
     // 助手也跟着换语言：告诉后端，之后的回复和抽取都用这个语言
-    try{ await fetch('/api/lang',{method:'POST',
+    try{ await fetch(BASE+'/api/lang',{method:'POST',
       headers:{'Content-Type':'application/json'},body:JSON.stringify({lang:LANG})}); }
     catch(err){ console.warn('[lang] 后端没接上', err); }
   });
@@ -2327,7 +2328,7 @@ renderAll();
 // 里还只是个空壳。切到别的空间再切回来反倒有内容（switchSpace 里调了
 // loadMemories），看着像"第一次进来会丢记忆"。
 loadSpaces().then(loadMemories);
-fetch('/api/lang',{method:'POST',headers:{'Content-Type':'application/json'},
+fetch(BASE+'/api/lang',{method:'POST',headers:{'Content-Type':'application/json'},
                    body:JSON.stringify({lang:LANG})}).catch(()=>{});
 })();
 </script>

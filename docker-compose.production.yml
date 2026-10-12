@@ -1,4 +1,19 @@
 services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: voicemem
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production or your shell}
+      POSTGRES_DB: voicemem
+    volumes:
+      - voicemem-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voicemem"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   voicemem:
     build:
       context: .
@@ -11,6 +26,11 @@ services:
       - "127.0.0.1:8787:10000"
     env_file:
       - .env.production
+    environment:
+      DATABASE_URL: postgresql://voicemem:${POSTGRES_PASSWORD}@db:5432/voicemem
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
       - voicemem-data:/var/lib/voicemem
     restart: unless-stopped
@@ -32,3 +52,4 @@ services:
 
 volumes:
   voicemem-data:
+  voicemem-db:

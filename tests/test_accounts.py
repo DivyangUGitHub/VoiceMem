@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from production import accounts
@@ -13,7 +15,13 @@ def fast_hashing(monkeypatch):
 
 @pytest.fixture
 def db(tmp_path):
-    return Accounts(f"sqlite:///{tmp_path}/a.db")
+    # CI points TEST_DATABASE_URL at a real Postgres; locally this is a throwaway SQLite file.
+    url = accounts.database_url({"DATABASE_URL": os.environ.get("TEST_DATABASE_URL", "")}) \
+        if os.environ.get("TEST_DATABASE_URL") else f"sqlite:///{tmp_path}/a.db"
+    store = Accounts(url)
+    yield store
+    accounts.metadata.drop_all(store.engine)
+    store.engine.dispose()
 
 
 def test_password_hash_roundtrip_and_salt():

@@ -1,6 +1,7 @@
 """Sign-up to delete-my-data, through the real production app with a stub runtime."""
 
 import importlib
+import os
 import shutil
 import sys
 import types
@@ -48,7 +49,8 @@ def world(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "run", stub)
     for name, value in {
         "VOICEMEM_API_KEYS": KEY, "VOICEMEM_SECRET_KEY": SECRET, "VOICEMEM_ALLOW_SIGNUP": "1",
-        "DATABASE_URL": f"sqlite:///{tmp_path}/accounts.db", "VOICEMEM_MEMORYSPACE_ROOT": str(root),
+        "DATABASE_URL": os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{tmp_path}/accounts.db",
+        "VOICEMEM_MEMORYSPACE_ROOT": str(root),
         "VOICEMEM_SCRYPT_N": "1024", "OPENAI_API_KEY": "sk-test",
     }.items():
         monkeypatch.setenv(name, value)
@@ -56,7 +58,11 @@ def world(monkeypatch, tmp_path):
     sys.modules.pop("production.asgi", None)
     mod = importlib.import_module("production.asgi")
     mod.root = root
-    return mod, lambda: TestClient(mod.app)
+    yield mod, lambda: TestClient(mod.app)
+    if mod.accounts:
+        from production.accounts import metadata
+        metadata.drop_all(mod.accounts.engine)       # clean slate on a shared Postgres
+        mod.accounts.engine.dispose()
 
 
 def signup(client, email="ann@example.com", password=PW):

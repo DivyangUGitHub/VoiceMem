@@ -262,6 +262,10 @@ protobuf==6.33.6
     #   tensorboardx
 psutil==7.2.2
     # via accelerate
+psycopg==3.3.6
+    # via voicemem (pyproject.toml)
+psycopg-binary==3.3.6
+    # via psycopg
 pycparser==3.0
     # via cffi
 pycryptodome==3.24.0
@@ -354,7 +358,9 @@ soundfile==0.14.0
 soxr==1.1.0
     # via librosa
 sqlalchemy==2.1.4
-    # via mem0ai
+    # via
+    #   voicemem (pyproject.toml)
+    #   mem0ai
 starlette==1.7.0
     # via fastapi
 sympy==1.14.0
@@ -412,6 +418,7 @@ typing-extensions==4.16.0
     #   openai
     #   opentelemetry-api
     #   posthog
+    #   psycopg
     #   pydantic
     #   pydantic-core
     #   sentence-transformers

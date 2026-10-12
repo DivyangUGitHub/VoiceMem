@@ -316,3 +316,29 @@ button:disabled {
   background: transparent;
   color: inherit;
 }
+
+/* ── sign-in tabs, consent, account panel ─────────────────────────────── */
+.tabs { display: flex; gap: 4px; margin: 4px 0 2px; }
+.tab { flex: 1; background: transparent; border: 1px solid var(--line, #2a2f3a); color: inherit; padding: 8px 6px; border-radius: 8px; cursor: pointer; }
+.tab.active { background: var(--accent, #4f8cff); border-color: var(--accent, #4f8cff); color: #fff; }
+.plain { margin: 0 0 12px; padding-left: 20px; line-height: 1.5; }
+.overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: grid; place-items: center; padding: 16px; z-index: 50; }
+.modal { width: min(460px, 100%); max-height: 90vh; overflow: auto; display: grid; gap: 10px; }
+.modal-head { display: flex; justify-content: space-between; align-items: center; }
+.modal h3 { margin: 12px 0 0; font-size: 14px; }
+.danger { background: #b3261e; border-color: #b3261e; color: #fff; }
+.danger:disabled { opacity: .5; }
+
+.login .card { width: min(440px, 100%); }
+.login button, .modal button { border-radius: 8px; padding: 10px 12px; border: 1px solid var(--border); }
+.login button:not(.secondary):not(.tab), .modal button[type="submit"]:not(.danger) {
+  background: var(--text); color: #07090d; border-color: var(--text); font-weight: 600;
+}
+.modal { background: var(--panel); margin: 0; }
+.modal form { display: grid; gap: 10px; }
+.modal input {
+  width: 100%; padding: 11px 12px; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18); background: transparent; color: inherit;
+}
+.modal button.danger, .login button.danger { background: #b3261e; border-color: #b3261e; color: #fff; }
+.tab { white-space: nowrap; font-size: 13px; }
