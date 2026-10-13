@@ -46,6 +46,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     VOICEMEM_PORT=10000 \
     DEMO_MODE=llm_tts \
     VOICEMEM_LOG_FORMAT=json \
+    VOICEMEM_DATA_DIR=/var/lib/voicemem \
     VOICEMEM_MEMORYSPACE_ROOT=/var/lib/voicemem/voicemem_memoryspace \
     VOICEMEM_MODELS_DIR=/var/lib/voicemem/models \
     HF_HOME=/var/lib/voicemem/huggingface \

@@ -30,6 +30,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -92,6 +93,7 @@ ARGS = _parse(None if __name__ == "__main__" else [])
 # 因为抽取 prompt 是按它选中英两套示例的。
 from voicemem.lang import set_memory_language as _set_lang   # noqa: E402
 _set_lang(ARGS.lang)
+from voicemem.utils.common import tenant as _tenant   # noqa: E402
 
 LOG_FILE = None
 if __name__ == "__main__" and not ARGS.no_file_log:
@@ -258,18 +260,18 @@ def _write_space_language(name: str, lang: str) -> None:
 def set_lang(lang: str) -> None:
     """右上角那个选择器：**只切界面语言**。
 
-    记忆语言和回复语言跟着**当前空间**走，不受这里影响——见 SPACE_LANG。
+    记忆语言和回复语言跟着**当前空间**走，不受这里影响——见 space_lang()。
     界面是中文、正在用的空间是英文库，这是允许的：你可以用中文界面浏览一个
     英文记忆库。
     """
     global UI_LANG
     UI_LANG = "en" if str(lang).lower().startswith("en") else "zh"
-    print(f"[lang] UI switched to {UI_LANG} (space {ACTIVE_SPACE} remains {SPACE_LANG})",
+    print(f"[lang] UI switched to {UI_LANG} (space {active_space()} remains {space_lang()})",
           flush=True)
 
 
 def _lang_note() -> str:
-    return _LANG_NOTE.get(SPACE_LANG, _LANG_NOTE["en"])
+    return _LANG_NOTE.get(space_lang(), _LANG_NOTE["en"])
 
 
 _NO_MEMORY_NOTE = (
@@ -310,7 +312,7 @@ def _musical_memory_ids() -> set[str]:
 
 
 #: 回放正在进行到什么时候（单调时钟）。这段时间里的空文本轮次一律丢掉。
-_REPLAY_UNTIL = 0.0
+_REPLAY_UNTIL: dict = {}      # active space -> monotonic deadline
 
 
 def _note_replay(memory_id: str) -> None:
@@ -322,7 +324,6 @@ def _note_replay(memory_id: str) -> None:
     的 holdMic），这里是第二道：万一前端没生效（别的客户端、老页面缓存），
     后端自己也认得出这一轮是自己放出去的。
     """
-    global _REPLAY_UNTIL
     path = audio_of(memory_id)
     if not path:
         return
@@ -331,11 +332,11 @@ def _note_replay(memory_id: str) -> None:
         dur = float(sf.info(path).duration)
     except Exception:
         dur = 15.0          # 读不出时长就按上限压一会儿，宁可多挡一轮
-    _REPLAY_UNTIL = time.monotonic() + dur + 1.0
+    _REPLAY_UNTIL[active_space()] = time.monotonic() + dur + 1.0
 
 
 def _replaying_now() -> bool:
-    return time.monotonic() < _REPLAY_UNTIL
+    return time.monotonic() < _REPLAY_UNTIL.get(active_space(), 0.0)
 
 
 #: 刚听过、还没来得及入库的那段音乐。``{"path": wav, "at": 单调时钟}``
@@ -345,7 +346,7 @@ def _replaying_now() -> bool:
 #: created_at 跟提问时间只差几秒，查库的时候还没有它。而 tune 识别是同步的
 #: （Ingest 立刻带着 recognized_tune 返回），这份缓存在上一轮结束时就写好了，
 #: 正好补上那十几秒空窗。
-_LAST_TUNE: dict = {"path": "", "at": 0.0}
+_LAST_TUNE: dict = {}      # active space -> {"path", "at"}; never shared across users
 
 #: 用这个假 id 请求上面那段录音。真 memory_id 是 uuid，不会撞。
 LAST_TUNE_ID = "last:tune"
@@ -355,13 +356,14 @@ LAST_TUNE_TTL_S = float(os.environ.get("VOICEMEM_LAST_TUNE_TTL", "1800"))
 
 
 def _remember_tune(audio_path: str) -> None:
-    _LAST_TUNE.update(path=str(audio_path or ""), at=time.monotonic())
+    _LAST_TUNE[active_space()] = {"path": str(audio_path or ""), "at": time.monotonic()}
     print(f"  [replay] Saved this music recording：{audio_path}", flush=True)
 
 
 def _last_tune_path() -> str:
-    p = _LAST_TUNE.get("path") or ""
-    if not p or time.monotonic() - float(_LAST_TUNE.get("at") or 0) > LAST_TUNE_TTL_S:
+    last = _LAST_TUNE.get(active_space()) or {}
+    p = last.get("path") or ""
+    if not p or time.monotonic() - float(last.get("at") or 0) > LAST_TUNE_TTL_S:
         return ""
     return p if Path(p).exists() else ""
 
@@ -656,7 +658,9 @@ def _stitch(memory_ids: list) -> str:
             elif sr != sr0:
                 x = _resample(x, sr, sr0)
             chunks.append(x)
-        out = TURN_AUDIO_DIR / f"stitch_{uuid.uuid4().hex[:12]}.wav"
+        out_dir = turn_audio_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out = out_dir / f"stitch_{uuid.uuid4().hex[:12]}.wav"
         sf.write(out, np.concatenate(chunks), sr0)
         _STITCH_CACHE[key] = str(out)
         total = sum(len(c) for c in chunks) / float(sr0 or 16000)
@@ -786,7 +790,7 @@ def _replay_id(text: str, result) -> str:
         return LAST_TUNE_ID
     print(f"  [replay] Cannot play: no music memories; retrieved "
           f"{len(getattr(result, 'hits', None) or [])} 条也都没音频，"
-          f"缓存 path={_LAST_TUNE.get('path') or '(空)'}", flush=True)
+          f"缓存 path={(_LAST_TUNE.get(active_space()) or {}).get('path') or '(空)'}", flush=True)
     return ""
 
 
@@ -925,7 +929,7 @@ def _realtime_instructions(memory_context: str, stranger: bool = False,
     else:
         parts.append(_NO_MEMORY_NOTE)      # 一条都没检索到：明说不知道，别编
     session_context = _history_block(
-        context_session, context_space or ACTIVE_SPACE)
+        context_session, context_space or active_space())
     if session_context:
         parts.append(session_context)
     if _lang_note():
@@ -972,45 +976,81 @@ REPLY = CONFIG.get("reply")                           # 传给 utils 的回复�
 #: 同一进程内建第二个实例几乎不花钱：模型是懒加载 + 进程内复用的，实测建实例
 #: 0.0s、Warm up 2.5s（第一个是 6.8s + 4.9s）。所以切换空间不用重启服务。
 _SPACES: dict = {}
+_SPACES_LOCK = threading.Lock()
+_ACTIVE: dict = {}      # tenant -> its active space (scoped). shortcut: in memory, a restart returns users to "main".
+DEFAULT_TENANT_SPACE = "main"
+
+
+def _tenant_prefix() -> str:
+    t = _tenant.current.get()
+    return f"{t}_" if t else ""
+
+
+def _display(scoped: str) -> str:
+    """The space name without the owner prefix, as the user typed it."""
+    p = _tenant_prefix()
+    return scoped[len(p):] if p and scoped.startswith(p) else scoped
+
+
+def active_space() -> str:
+    """The (scoped) space this request works in."""
+    t = _tenant.current.get()
+    if not t:
+        return active_space()
+    return _ACTIVE.get(t) or space_dir(DEFAULT_TENANT_SPACE)[1]
+
+
+def space_lang() -> str:
+    return space_language(active_space()) if _tenant.current.get() else space_lang()
 
 
 def space_dir(name: str):
     """这个空间在磁盘上的目录。名字只允许字母数字和 - _，避免路径穿越。"""
     import re as _re
-    safe = _re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]", "", (name or "").strip())[:32]
-    if not safe:
+    safe = _re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]", "", (name or "").strip())
+    prefix = _tenant_prefix()
+    # Forced under the caller's own prefix, so a user can never name another user's space.
+    scoped = safe[:len(prefix) + 32] if safe.startswith(prefix) else prefix + safe[:32]
+    if not scoped[len(prefix):]:
         raise ValueError("Space name cannot be empty")
     from voicemem.utils.common import space as _sp
-    return _sp.root() / safe, safe        # honours VOICEMEM_MEMORYSPACE_ROOT (the Docker volume)
+    return _sp.root() / scoped, scoped    # honours VOICEMEM_MEMORYSPACE_ROOT (the Docker volume)
 
 
 def get_space(name: str):
     """取（必要时创建）这个空间的 VoiceMem。"""
     _, safe = space_dir(name)
     if safe not in _SPACES:
-        cfg = dict(CONFIG)
-        cfg["space"] = safe
-        t0 = time.monotonic()
-        inst = VoiceMem.from_config(cfg)
-        inst.warmup(verbose=False)
-        _SPACES[safe] = inst
-        print(f"[space] Opened {safe} in {time.monotonic()-t0:.1f}s", flush=True)
+        with _SPACES_LOCK:                       # two first requests must not build the same space twice
+            if safe not in _SPACES:
+                cfg = dict(CONFIG)
+                cfg["space"] = safe
+                t0 = time.monotonic()
+                inst = VoiceMem.from_config(cfg)
+                inst.warmup(verbose=False)
+                _SPACES[safe] = inst
+                print(f"[space] Opened {safe} in {time.monotonic()-t0:.1f}s", flush=True)
     return _SPACES[safe]
 
 
 def use_space(name: str) -> str:
-    """切到这个空间。返回真正用的名字。
+    """Switch to this space and return its name as the user sees it.
 
-    ``vm`` 是模块级全局，下游全部按名字在运行时查找，所以这里重新绑定就够了——
-    不用把实例一路传下去。注意 build_app 收的那几个回调必须是 lambda 而不是
-    ``vm.classify`` 这种绑定方法，绑定方法会把切换前那个实例焊死。
+    Single-user mode swaps the process-wide space. With a tenant bound it only changes
+    that user's active space, so nobody can switch another user's.
     """
-    global vm, ACTIVE_SPACE, SPACE_LANG
-    vm = get_space(name)
-    _, ACTIVE_SPACE = space_dir(name)
-    SPACE_LANG = space_language(ACTIVE_SPACE)
-    _set_lang(SPACE_LANG)            # 记忆语言跟着空间走
-    return ACTIVE_SPACE
+    global ACTIVE_SPACE, SPACE_LANG
+    _, scoped = space_dir(name)
+    get_space(scoped)
+    lang = space_language(scoped)
+    tenant = _tenant.current.get()
+    if tenant:
+        _ACTIVE[tenant] = scoped
+    else:
+        ACTIVE_SPACE = scoped
+        SPACE_LANG = lang
+    _set_lang(lang)                  # memory language follows the space
+    return _display(scoped)
 
 
 def list_spaces() -> list:
@@ -1019,7 +1059,8 @@ def list_spaces() -> list:
     from voicemem.utils.common import space as _sp
     root = _sp.root()
     out = []
-    for d in sorted(p for p in root.glob("*") if p.is_dir()):
+    prefix = _tenant_prefix()
+    for d in sorted(p for p in root.glob("*") if p.is_dir() and p.name.startswith(prefix)):
         n = 0
         try:
             from voicemem.utils.common import space as _sp
@@ -1030,10 +1071,33 @@ def list_spaces() -> list:
                 c.close()
         except Exception:
             n = 0
-        out.append({"id": d.name, "name": d.name, "count": n,
-                    "active": d.name == ACTIVE_SPACE, "open": d.name in _SPACES,
+        out.append({"id": _display(d.name), "name": _display(d.name), "count": n,
+                    "active": d.name == active_space(), "open": d.name in _SPACES,
                     "language": space_language(d.name)})
     return out
+
+
+def purge_tenant(tenant: str) -> int:
+    """Delete everything stored for this user: memory spaces, recordings, caches.
+    Returns how many spaces were removed. Used when a user deletes their account."""
+    import shutil
+    from voicemem.lang import _by_tenant
+    from voicemem.utils.common import space as _sp
+    prefix = f"{tenant}_"
+    with _SPACES_LOCK:
+        for key in [k for k in _SPACES if k.startswith(prefix)]:
+            _SPACES.pop(key)         # shortcut: open sqlite handles are freed by GC, not closed explicitly
+    removed = 0
+    for d in _sp.root().glob(prefix + "*"):
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
+            removed += 1
+    _ACTIVE.pop(tenant, None)
+    _by_tenant.pop(tenant, None)
+    for cache in (_LAST_TUNE, _LAST_HIT_IDS, _REPLAY_UNTIL, _OWNER_NAME_CACHE):
+        for key in [k for k in cache if str(k).startswith(prefix)]:
+            cache.pop(key, None)
+    return removed
 
 
 def create_space(name: str, language: str = "") -> dict:
@@ -1050,16 +1114,30 @@ def create_space(name: str, language: str = "") -> dict:
     lang = "zh" if str(language or ARGS.lang).lower().startswith("zh") else "en"
     _write_space_language(safe, lang)    # 建的时候定一次，之后不再变
     print(f"[space] Created {safe} (language {lang}) -> {d}", flush=True)
-    return {"id": safe, "name": safe, "count": 0, "language": lang}
+    return {"id": _display(safe), "name": _display(safe), "count": 0, "language": lang}
 
 
 ACTIVE_SPACE = ""
-vm = None
+
+
+class _ActiveVM:
+    """Stands in for the old global ``vm``: resolves to the memory of whoever is asking."""
+
+    def __getattr__(self, attr):
+        return getattr(get_space(active_space()), attr)
+
+
+vm = _ActiveVM()
 use_space(ARGS.space)
 
 
 #: 语音轮的音频落在这儿。归档表存的是路径，文件本身得真的在。
-TURN_AUDIO_DIR = _ROOT / "results" / "turn_audio"
+def turn_audio_dir() -> Path:
+    """Inside the user's own space, so deleting the space deletes the recordings, and the
+    folder is on the data volume. Single-user mode keeps the old location."""
+    if _tenant.current.get():
+        return space_dir(active_space())[0] / "audio"
+    return _ROOT / "results" / "turn_audio"
 
 
 def save_turn_audio(pcm16k) -> str:
@@ -1073,8 +1151,9 @@ def save_turn_audio(pcm16k) -> str:
     try:
         import numpy as np
         import soundfile as sf
-        TURN_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-        path = TURN_AUDIO_DIR / f"turn_{uuid.uuid4().hex[:12]}.wav"
+        out_dir = turn_audio_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"turn_{uuid.uuid4().hex[:12]}.wav"
         sf.write(path, np.asarray(pcm16k, dtype="float32"), 16000)
         return str(path)
     except Exception as e:
@@ -1339,7 +1418,7 @@ async def voicemem_llm_tts(pending, send, send_audio, owner, timeline,
     在字数上没区别，只能靠内容认。
     """
     memory_vm = memory_vm or vm
-    context_space = context_space or ACTIVE_SPACE
+    context_space = context_space or active_space()
     await send({"type": "user_transcript", "text": pending.text})
     # 声学情绪**不在这儿算**。它要 2.3 秒（emotion2vec 跑整段音频），而这几行是
     # 用户说完到助手开口之间最要紧的一段——实测这一步就吃掉了 4.5 秒里的一半，
@@ -2210,7 +2289,7 @@ async def llm_tts_session(sock):
         turn["t0"] = turn["until"] = 0.0
         turn["reply"] = {"text": ""}            # 新一轮，回声比对从空的开始
         reply_state = turn["reply"]
-        context_space = ACTIVE_SPACE
+        context_space = active_space()
         memory_vm = vm
         timeline = AudioTimeline(
             prebuffer_seconds=0.16, rate_estimator=speech_rate)
@@ -2336,7 +2415,7 @@ async def realtime_session(sock):
             def close_turn(interrupted=False):
                 p, reply = turn["pending"], turn["reply"]
                 timeline = turn["timeline"]
-                space = turn["space"] or ACTIVE_SPACE
+                space = turn["space"] or active_space()
                 memory_vm = turn["memory_vm"] or vm
                 turn.update(live=False, reply="", pending=None, timeline=None,
                             response_done=False, provider_item_id="",
@@ -2574,7 +2653,7 @@ async def realtime_session(sock):
                         if BARGE_DEBUG:
                             print("[barge] 等旧 response 退出后再创建下一轮", flush=True)
                         await response_idle.wait()
-                    context_space = ACTIVE_SPACE
+                    context_space = active_space()
                     memory_vm = vm
                     timeline = AudioTimeline(
                         prebuffer_seconds=0.08, rate_estimator=speech_rate)
@@ -2728,7 +2807,7 @@ _BAD_NAME_CHARS = "什谁哪啥吗呢么?？"
 
 def owner_name(space: str = "") -> str:
     """这个空间主人的名字；认不出来就返回 ""（调用方自己回落到"他"）。"""
-    space = space or ACTIVE_SPACE
+    space = space or active_space()
     if space in _OWNER_NAME_CACHE:
         return _OWNER_NAME_CACHE[space]
     name = ""
@@ -2878,7 +2957,7 @@ def rb_human(claim: str) -> str:
     """显示用的那句话。还没改写好就先返回原文，同时排上队。"""
     if not RB_HUMANIZE or not claim:
         return claim
-    name, lang = owner_name(), SPACE_LANG
+    name, lang = owner_name(), space_lang()
     hit = _RB_HUMAN.get((lang, name, claim))
     if hit:
         return hit
@@ -2894,7 +2973,7 @@ def rb_human_batch(claims: list) -> None:
     """一次把缺的都排上队——脑图一屏几十条，一条一个线程太浪费。"""
     if not RB_HUMANIZE:
         return
-    name, lang = owner_name(), SPACE_LANG
+    name, lang = owner_name(), space_lang()
     todo = [c for c in dict.fromkeys(claims)
             if c and (lang, name, c) not in _RB_HUMAN
             and (lang, name, c) not in _RB_HUMAN_PENDING]
@@ -3023,16 +3102,20 @@ def _right_brain_tree_v1(uid: str, facts: dict) -> list:
 
 #: 最近一轮检索命中的记忆 id。快照要保证它们在图上——脑图上亮起来的必须是
 #: 后端真正检索到的那几条，命中了却没画出来，"它记得这件事"就没演出来。
-_LAST_HIT_IDS: set = set()
+_LAST_HIT_IDS: dict = {}      # active space -> ids
+
+
+def _hit_ids() -> set:
+    return _LAST_HIT_IDS.setdefault(active_space(), set())
 
 
 def note_hits(result) -> None:
     """记下这一轮检索命中了哪些左脑记忆。"""
-    _LAST_HIT_IDS.clear()
+    _hit_ids().clear()
     for h in (getattr(result, "hits", None) or []):
         mid = getattr(h, "memory_id", "")
         if mid:
-            _LAST_HIT_IDS.add(str(mid))
+            _hit_ids().add(str(mid))
 
 
 def memory_snapshot(limit: int = 48) -> dict:
@@ -3064,18 +3147,18 @@ def memory_snapshot(limit: int = 48) -> dict:
         # 得是后端真检索到的东西，命中了却没画出来，看着就像"检索到 5 条只亮了 3 个"。
         # 命中的先排进去，剩下的名额再按原来的顺序填。
         per_slot, kept = {}, []
-        hit_first = ([e for e in entries if str(e["id"]) in _LAST_HIT_IDS] +
-                     [e for e in entries if str(e["id"]) not in _LAST_HIT_IDS])
+        hit_first = ([e for e in entries if str(e["id"]) in _hit_ids()] +
+                     [e for e in entries if str(e["id"]) not in _hit_ids()])
         for e in hit_first:
             sl = slot_of.get(e["id"], "daily_life")
-            hit = str(e["id"]) in _LAST_HIT_IDS
+            hit = str(e["id"]) in _hit_ids()
             per_slot[sl] = per_slot.get(sl, 0) + 1
             if hit or per_slot[sl] <= LB_ENTRIES_PER_SLOT:
                 kept.append(e)
         entries = kept
         # 同理，命中的那几条不能被 limit 截掉
-        head = [e for e in entries if str(e["id"]) in _LAST_HIT_IDS]
-        rest = [e for e in entries if str(e["id"]) not in _LAST_HIT_IDS]
+        head = [e for e in entries if str(e["id"]) in _hit_ids()]
+        rest = [e for e in entries if str(e["id"]) not in _hit_ids()]
         for e in (head + rest)[:max(limit, len(head))]:
             # list_entries 的 date 直接截了 time_start 前 10 位，遇到纯时间串会切出
             # "09:20:37" 这种。不像日期就置空，别把垃圾送到前端。
@@ -3098,7 +3181,7 @@ def memory_snapshot(limit: int = 48) -> dict:
             # （Jiaqi、室友、打游戏…）冒到标签栏上。
             left.append({"text": e["text"], "date": d if d[:4].isdigit() else "",
                          "slot": slot_of.get(e["id"], "daily_life"),
-                         "hit": str(e["id"]) in _LAST_HIT_IDS,
+                         "hit": str(e["id"]) in _hit_ids(),
                          "entities": list(ents)[:6]})
     except Exception as e:
         print(f"[web] 左脑快照读取失败：{e}", flush=True)
@@ -3113,7 +3196,7 @@ def memory_snapshot(limit: int = 48) -> dict:
 # 切换空间之后脑图还在给旧空间分类。
 app = utils.build_app(MODE, realtime_session if MODE == "realtime" else llm_tts_session,
                       lambda *a, **k: vm.classify(*a, **k), memory_snapshot, audio_of,
-                      spaces=(list_spaces, create_space, use_space, lambda: ACTIVE_SPACE),
+                      spaces=(list_spaces, create_space, use_space, lambda: _display(active_space())),
                       set_lang=set_lang)
 
 

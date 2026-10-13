@@ -10,16 +10,21 @@ Policy
   Everything else (static frontend, ``/healthz``, ``/readyz``, ``/auth/*``) is public.
 * Credential = signed session cookie (browser login), ``Authorization: Bearer <key>``
   or ``X-API-Key`` (scripts). Keys come from ``VOICEMEM_API_KEYS`` (comma separated).
-* The app refuses to start with no keys unless ``VOICEMEM_AUTH_DISABLED=1``.
+* Users sign up and sign in with email and password (needs ``DATABASE_URL`` or the default
+  SQLite file, and ``VOICEMEM_SECRET_KEY``). Each user's session is bound to their own memory.
+  Every API key is its own isolated user too.
+* The app refuses to start with no keys and no secret unless ``VOICEMEM_AUTH_DISABLED=1``.
 * State is in memory: correct for the single-instance deployment documented in
   ``docs/PRODUCTION.md``. Put a shared store (Redis) behind it before scaling out.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import hmac
+import json
 import logging
 import os
 import re
@@ -31,12 +36,15 @@ from urllib.parse import urlsplit
 from starlette.requests import cookie_parser
 from starlette.responses import JSONResponse
 
+from production.accounts import AccountError, EmailTaken, make_session, read_session
+from voicemem.utils.common import tenant
+
 log = logging.getLogger("voicemem.security")
 
 COOKIE = "vm_session"
 SESSION_TTL_S = 12 * 3600
 MIN_KEY_LEN = 16
-PROTECTED = ("/backend", "/api-docs", "/openapi.json", "/metrics")
+PROTECTED = ("/backend", "/account", "/api-docs", "/openapi.json", "/metrics")
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 _HOST_RE = re.compile(r"^[A-Za-z0-9.\-:\[\]]{1,255}$")
 
@@ -51,6 +59,8 @@ def _env_int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     api_keys: tuple[str, ...] = ()
+    secret_key: str = ""            # signs user sessions; enables accounts
+    allow_signup: bool = False
     auth_disabled: bool = False
     allowed_origins: frozenset[str] = frozenset()
     rate_per_min: int = 120          # protected HTTP requests per client
@@ -69,6 +79,8 @@ class Settings:
         )
         return cls(
             api_keys=keys,
+            secret_key=os.environ.get("VOICEMEM_SECRET_KEY", "").strip(),
+            allow_signup=os.environ.get("VOICEMEM_ALLOW_SIGNUP", "0") == "1",
             auth_disabled=os.environ.get("VOICEMEM_AUTH_DISABLED", "0") == "1",
             allowed_origins=origins,
             rate_per_min=_env_int("VOICEMEM_RATE_LIMIT_PER_MIN", 120),
@@ -83,9 +95,11 @@ class Settings:
         if self.auth_disabled:
             log.warning("VOICEMEM_AUTH_DISABLED=1: authentication is OFF. Local development only.")
             return
-        if not self.api_keys:
+        if self.secret_key and len(self.secret_key) < 32:
+            raise RuntimeError("VOICEMEM_SECRET_KEY must be at least 32 characters.")
+        if not self.api_keys and not self.secret_key:
             raise RuntimeError(
-                "VOICEMEM_API_KEYS is empty. Set one or more keys, e.g.\n"
+                "VOICEMEM_API_KEYS is empty and VOICEMEM_SECRET_KEY is not set. Set one or both, e.g.\n"
                 "  python -c \"import secrets; print(secrets.token_urlsafe(32))\"\n"
                 "or set VOICEMEM_AUTH_DISABLED=1 for local development."
             )
@@ -150,10 +164,13 @@ class RateLimiter:
 
 
 class SecurityMiddleware:
-    def __init__(self, app, settings: Settings | None = None) -> None:
+    def __init__(self, app, settings: Settings | None = None, accounts=None) -> None:
         self.app = app
         self.s = settings or Settings.from_env()
         self.s.validate()
+        self.accounts = accounts
+        if self.s.secret_key and accounts is None and not self.s.auth_disabled:
+            raise RuntimeError("VOICEMEM_SECRET_KEY is set but no accounts store was given.")
         self.limiter = RateLimiter()
         self._ws_active: dict[str, int] = defaultdict(int)
 
@@ -197,17 +214,27 @@ class SecurityMiddleware:
         host = h.get("host", "")
         return bool(host) and urlsplit(origin).netloc.lower() == host.lower()
 
-    def _authenticated(self, h) -> bool:
-        if self.s.auth_disabled:
-            return True
+    def _identify(self, h) -> str | None:
+        """Who is calling: ``u<id>`` for a signed-in user, ``k<keyid>`` for an API key, else None."""
         keys = self.s.api_keys
         auth = h.get("authorization", "")
-        if auth[:7].lower() == "bearer " and key_matches(auth[7:].strip(), keys):
-            return True
-        if h.get("x-api-key") and key_matches(h["x-api-key"].strip(), keys):
-            return True
+        for cand in (auth[7:].strip() if auth[:7].lower() == "bearer " else "", h.get("x-api-key", "").strip()):
+            if cand and key_matches(cand, keys):
+                return "k" + _key_id(cand)
         token = cookie_parser(h.get("cookie", "")).get(COOKIE)
-        return bool(token) and verify_token(token, keys)
+        if not token:
+            return None
+        if self.accounts and self.s.secret_key:
+            got = read_session(self.s.secret_key, token)
+            if got:
+                uid, version = got
+                return uid if self.accounts.token_version(uid) == version else None
+        if verify_token(token, keys):
+            return "k" + token.split(".")[1]
+        return None
+
+    def _authenticated(self, h) -> bool:
+        return self.s.auth_disabled or self._identify(h) is not None
 
     def _response_headers(self, scope, h, path: str) -> list[tuple[bytes, bytes]]:
         host = h.get("host", "")
@@ -254,8 +281,10 @@ class SecurityMiddleware:
         if path.startswith("/auth/"):
             return await self._auth(scope, receive, send, h, client, path)
 
+        who = None
         if self._is_protected(path):
-            if not self._authenticated(h):
+            who = self._identify(h)
+            if who is None and not self.s.auth_disabled:
                 log.warning("auth rejected client=%s path=%s", client, path)
                 limited = not self.limiter.allow("authfail", client, self.s.authfail_per_min)
                 resp = JSONResponse({"error": "rate_limited" if limited else "unauthorized"},
@@ -292,49 +321,95 @@ class SecurityMiddleware:
             started = started or msg["type"] == "http.response.start"
             await send(msg)
 
-        with contextlib.suppress(_BodyTooLarge):
-            await self.app(scope, capped_receive, tracking_send)
+        bound = tenant.bind(who) if who else None
+        try:
+            with contextlib.suppress(_BodyTooLarge):
+                await self.app(scope, capped_receive, tracking_send)
+        finally:
+            if bound is not None:
+                tenant.reset(bound)
         if too_large and not started:
             await JSONResponse({"error": "body_too_large"}, status_code=413)(scope, receive, send)
 
-    async def _auth(self, scope, receive, send, h, client, path):
-        method = scope["method"]
-        if path == "/auth/me" and method == "GET":
-            ok = self._authenticated(h)
-            return await JSONResponse({"authenticated": ok, "auth_required": not self.s.auth_disabled},
-                                      status_code=200 if ok else 401)(scope, receive, send)
-        if method != "POST" or path not in ("/auth/login", "/auth/logout"):
-            return await JSONResponse({"error": "not_found"}, status_code=404)(scope, receive, send)
-        if not self._origin_ok(h):
-            return await JSONResponse({"error": "bad_origin"}, status_code=403)(scope, receive, send)
-
-        secure = "; Secure" if self._is_https(scope, h) else ""
-        if path == "/auth/logout":
-            cookie = f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict{secure}"
-            return await JSONResponse({"ok": True}, headers={"Set-Cookie": cookie})(scope, receive, send)
-
-        if not self.limiter.allow("login", client, self.s.login_per_min):
-            return await JSONResponse({"error": "rate_limited"}, status_code=429,
-                                      headers={"Retry-After": "60"})(scope, receive, send)
+    @staticmethod
+    async def _read_json(receive) -> dict | None:
+        """Small JSON object from the body; None if it is too big, {} if it is not an object."""
         body = b""
         while True:
             msg = await receive()
             body += msg.get("body", b"")
             if len(body) > 4096:
-                return await JSONResponse({"error": "body_too_large"}, status_code=413)(scope, receive, send)
+                return None
             if not msg.get("more_body"):
                 break
         try:
-            import json
-            key = str(json.loads(body or b"{}").get("key", "")).strip()
-        except (ValueError, AttributeError):
-            key = ""
+            data = json.loads(body or b"{}")
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    async def _auth(self, scope, receive, send, h, client, path):
+        method = scope["method"]
+        if path == "/auth/me" and method == "GET":
+            who = self._identify(h)
+            ok = self.s.auth_disabled or who is not None
+            body = {"authenticated": ok, "auth_required": not self.s.auth_disabled,
+                    "accounts": self.accounts is not None,
+                    "signup_allowed": bool(self.accounts and self.s.allow_signup)}
+            if who and who.startswith("u") and self.accounts:
+                user = self.accounts.get(who)
+                if user:
+                    body["user"] = {"email": user["email"], "consented": user["consented"]}
+            return await JSONResponse(body, status_code=200 if ok else 401)(scope, receive, send)
+        if method != "POST" or path not in ("/auth/login", "/auth/logout", "/auth/signup"):
+            return await JSONResponse({"error": "not_found"}, status_code=404)(scope, receive, send)
+        if not self._origin_ok(h):
+            return await JSONResponse({"error": "bad_origin"}, status_code=403)(scope, receive, send)
+
+        secure = "; Secure" if self._is_https(scope, h) else ""
+
+        def cookie(token: str, max_age: int) -> dict:
+            return {"Set-Cookie": f"{COOKIE}={token}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Strict{secure}"}
+
+        if path == "/auth/logout":
+            return await JSONResponse({"ok": True}, headers=cookie("", 0))(scope, receive, send)
+
+        if not self.limiter.allow("login", client, self.s.login_per_min):
+            return await JSONResponse({"error": "rate_limited"}, status_code=429,
+                                      headers={"Retry-After": "60"})(scope, receive, send)
+        data = await self._read_json(receive)
+        if data is None:
+            return await JSONResponse({"error": "body_too_large"}, status_code=413)(scope, receive, send)
+
+        if path == "/auth/signup":
+            if not (self.accounts and self.s.allow_signup):
+                return await JSONResponse({"error": "signup_closed"}, status_code=403)(scope, receive, send)
+            try:
+                user = await asyncio.to_thread(
+                    self.accounts.create, str(data.get("email", "")), str(data.get("password", "")))
+            except EmailTaken:
+                return await JSONResponse({"error": "email_taken"}, status_code=409)(scope, receive, send)
+            except AccountError as exc:
+                return await JSONResponse({"error": "invalid", "message": str(exc)},
+                                          status_code=400)(scope, receive, send)
+            token = make_session(self.s.secret_key, user["id"], 0)
+            return await JSONResponse({"ok": True}, status_code=201,
+                                      headers=cookie(token, SESSION_TTL_S))(scope, receive, send)
+
+        if self.accounts and "email" in data:
+            user = await asyncio.to_thread(
+                self.accounts.authenticate, str(data.get("email", "")), str(data.get("password", "")))
+            if not user:
+                log.warning("login failed client=%s", client)
+                return await JSONResponse({"error": "invalid_credentials"}, status_code=401)(scope, receive, send)
+            token = make_session(self.s.secret_key, user["id"], self.accounts.token_version(user["id"]))
+            return await JSONResponse({"ok": True}, headers=cookie(token, SESSION_TTL_S))(scope, receive, send)
+
+        key = str(data.get("key", "")).strip()
         if self.s.auth_disabled or not key_matches(key, self.s.api_keys):
             log.warning("login failed client=%s", client)
             return await JSONResponse({"error": "invalid_key"}, status_code=401)(scope, receive, send)
-        token = make_token(key)
-        cookie = f"{COOKIE}={token}; Path=/; Max-Age={SESSION_TTL_S}; HttpOnly; SameSite=Strict{secure}"
-        return await JSONResponse({"ok": True}, headers={"Set-Cookie": cookie})(scope, receive, send)
+        return await JSONResponse({"ok": True}, headers=cookie(make_token(key), SESSION_TTL_S))(scope, receive, send)
 
     # ── WebSocket ────────────────────────────────────────────────────────────
     async def _ws(self, scope, receive, send):
@@ -352,9 +427,13 @@ class SecurityMiddleware:
             return await deny("bad_path")
         if not self._origin_ok(h):
             return await deny("bad_origin")
-        if not self._authenticated(h):
+        who = self._identify(h)
+        if who is None and not self.s.auth_disabled:
             self.limiter.allow("authfail", client, self.s.authfail_per_min)
             return await deny("unauthorized")
+        # Voice and voiceprints are personal data: a signed-in user must agree first.
+        if who and who.startswith("u") and self.accounts and not self.accounts.has_consent(who):
+            return await deny("consent_required")
         if not self.limiter.allow("ws", client, self.s.ws_connects_per_min):
             return await deny("rate_limited")
         if self._ws_active[client] >= self.s.max_ws_per_client:
@@ -378,9 +457,12 @@ class SecurityMiddleware:
             return msg
 
         self._ws_active[client] += 1
+        bound = tenant.bind(who) if who else None
         try:
             await self.app(scope, guarded_receive, send)
         finally:
+            if bound is not None:
+                tenant.reset(bound)
             self._ws_active[client] -= 1
             if self._ws_active[client] <= 0:
                 self._ws_active.pop(client, None)

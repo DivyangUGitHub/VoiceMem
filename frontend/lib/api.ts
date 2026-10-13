@@ -38,11 +38,32 @@ async function request(input: string, init?: RequestInit): Promise<Response> {
 
 const json = { "content-type": "application/json" };
 
+export type Me = {
+  authenticated: boolean;
+  accounts: boolean;
+  signupAllowed: boolean;
+  user?: { email: string; consented: boolean };
+};
+
+/** Turn a failed response into an Error with the server's message when it sent one. */
+async function failIfBad(response: Response, fallback: string): Promise<void> {
+  if (response.ok) return;
+  if (response.status === 429) throw new Error("Too many attempts. Wait a minute and try again.");
+  const body = await response.json().catch(() => ({}));
+  throw new Error(body.message || (typeof body.detail === "string" ? body.detail : "") || fallback);
+}
+
 export const api = {
-  /** True when a valid session cookie exists, or when the server runs with auth disabled. */
-  async me(): Promise<boolean> {
+  /** Who is signed in, and what this server offers. Works whether or not you are signed in. */
+  async me(): Promise<Me> {
     const response = await fetch("/auth/me", { cache: "no-store" });
-    return response.ok;
+    const body = await response.json().catch(() => ({}));
+    return {
+      authenticated: response.ok && body.authenticated !== false,
+      accounts: Boolean(body.accounts),
+      signupAllowed: Boolean(body.signup_allowed),
+      user: body.user ? { email: String(body.user.email), consented: Boolean(body.user.consented) } : undefined,
+    };
   },
 
   async login(key: string): Promise<void> {
@@ -54,6 +75,54 @@ export const api = {
     if (response.status === 401) throw new Error("That key is not valid.");
     if (response.status === 429) throw new Error("Too many attempts. Wait a minute and try again.");
     if (!response.ok) throw new Error("Sign-in failed. Try again.");
+  },
+
+  async loginWithEmail(email: string, password: string): Promise<void> {
+    const response = await fetch("/auth/login", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ email, password }),
+    });
+    if (response.status === 401) throw new Error("Wrong email or password.");
+    await failIfBad(response, "Sign-in failed. Try again.");
+  },
+
+  async signup(email: string, password: string): Promise<void> {
+    const response = await fetch("/auth/signup", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ email, password }),
+    });
+    if (response.status === 409) throw new Error("An account with this email already exists.");
+    if (response.status === 403) throw new Error("Sign-up is closed. Ask the owner for an account.");
+    await failIfBad(response, "Could not create the account. Try again.");
+  },
+
+  async setConsent(agree: boolean): Promise<void> {
+    await failIfBad(
+      await fetch("/account/consent", { method: "POST", headers: json, body: JSON.stringify({ agree }) }),
+      "Could not save your choice. Try again.",
+    );
+  },
+
+  async changePassword(oldPassword: string, newPassword: string): Promise<void> {
+    const response = await fetch("/account/password", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ old: oldPassword, new: newPassword }),
+    });
+    if (response.status === 401) throw new Error("Your current password is wrong.");
+    await failIfBad(response, "Could not change the password.");
+  },
+
+  async deleteAccount(password: string): Promise<void> {
+    const response = await fetch("/account/delete", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ password }),
+    });
+    if (response.status === 401) throw new Error("That password is wrong.");
+    await failIfBad(response, "Could not delete the account.");
   },
 
   async logout(): Promise<void> {

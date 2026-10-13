@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from voicemem.utils.common import tenant as _tenant
 from typing import Any
 
 from voicemem.utils.common._graph_common import cosine as _cosine
@@ -321,11 +322,7 @@ class LeftBrainMemoryRepositoryV2(LeftBrainMemoryRepository):
             current_count = self._cognitive_store.count_memories_in_slot(user_id, slot)  # type: ignore[union-attr]
             last_count = self._cognitive_store.get_slot_summary_mem_count(user_id, slot)  # type: ignore[union-attr]
             if current_count - last_count >= update_every:
-                threading.Thread(
-                    target=self._update_slot_summary,
-                    args=(user_id, slot, current_count),
-                    daemon=True,
-                ).start()
+                _tenant.thread(self._update_slot_summary, user_id, slot, current_count).start()
         except Exception:
             pass
 

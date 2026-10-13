@@ -34,6 +34,18 @@ jobs:
 
   python:
     runs-on: ubuntu-latest
+    # A real Postgres, because accounts and backups must work on the database used in production.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: voicemem_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:test@localhost:5432/voicemem_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,7 +55,7 @@ jobs:
       # The tests only need the web layer, not torch or the models, so this stays fast.
       - name: Install test tooling
         run: |
-          pip install numpy fastapi uvicorn pydantic httpx pytest ruff
+          pip install numpy fastapi uvicorn pydantic httpx pytest ruff sqlalchemy "psycopg[binary]" openai soundfile scipy
           pip install --no-deps -e .
       - run: ruff check .
       - run: python -m pytest -q

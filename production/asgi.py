@@ -16,9 +16,11 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from production.account_api import build_account_app
+from production.accounts import Accounts
 from production.health import readiness
 from production.observability import Metrics, Observability, configure_logging
-from production.security import SecurityMiddleware, Settings
+from production.security import COOKIE, SecurityMiddleware, Settings
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
@@ -29,13 +31,17 @@ configure_logging()
 # Fail in a second on bad configuration, not after the models have loaded.
 settings = Settings.from_env()
 settings.validate()
+# Accounts need the database: connect now, so a bad DATABASE_URL stops the start, not the first sign-up.
+accounts = Accounts() if settings.secret_key else None
 
 # web/run.py intentionally imports its sibling modules as top-level modules.
 # Put that directory on sys.path without changing the existing application.
 if str(WEB) not in sys.path:
     sys.path.insert(0, str(WEB))
 
-from run import app as legacy_app  # noqa: E402
+import run as run_module  # noqa: E402
+
+legacy_app = run_module.app
 
 docs = os.environ.get("VOICEMEM_ENABLE_DOCS", "0") == "1"
 app = FastAPI(
@@ -47,7 +53,7 @@ app = FastAPI(
 )
 metrics = Metrics()
 # Last added = outermost: observability sees the final status of everything, including 401/429.
-app.add_middleware(SecurityMiddleware, settings=settings)
+app.add_middleware(SecurityMiddleware, settings=settings, accounts=accounts)
 app.add_middleware(Observability, metrics=metrics)
 
 
@@ -59,7 +65,7 @@ def healthz():
 @app.get("/readyz", include_in_schema=False)
 def readyz():
     memory_root = Path(os.environ.get("VOICEMEM_MEMORYSPACE_ROOT", ROOT / "voicemem_memoryspace"))
-    ready, checks = readiness(FRONTEND, memory_root)
+    ready, checks = readiness(FRONTEND, memory_root, database=accounts.ping if accounts else None)
     body = {"status": "ready" if ready else "not_ready", "checks": checks}
     return JSONResponse(body, status_code=200 if ready else 503)
 
@@ -75,6 +81,9 @@ def metrics_endpoint():
 #   /backend/ws
 #   /backend/images/...
 app.mount("/backend", legacy_app)
+if accounts:
+    purge = getattr(run_module, "purge_tenant", lambda tenant_id: 0)
+    app.mount("/account", build_account_app(accounts, purge, COOKIE))
 
 if FRONTEND.is_dir():
     app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="frontend")

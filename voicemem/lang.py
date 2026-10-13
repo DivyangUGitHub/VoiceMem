@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import os
 
+from voicemem.utils.common import tenant as _tenant
+
 ENV = "VOICEMEM_MEMORY_LANGUAGE"
 DEFAULT = "en"
 
@@ -27,6 +29,7 @@ LANGUAGE_NAMES = {
 
 SUPPORTED = tuple(LANGUAGE_NAMES)
 _override: str | None = None
+_by_tenant: dict[str, str] = {}   # tenant id -> language, so users do not change each other's
 
 
 def _check(value: str) -> str:
@@ -56,17 +59,26 @@ def language_name(value: str) -> str:
 
 
 def _set(lang: str) -> None:
-    global _override
-    _override = lang
+    set_memory_language(lang)
 
 
 def set_memory_language(value: str | None) -> None:
-    """Set the process-level language override."""
+    """Set the language override: per user when a tenant is bound, else process-wide."""
     global _override
-    _override = _check(value) if (value or "").strip() else None
+    lang = _check(value) if (value or "").strip() else None
+    tenant = _tenant.current.get()
+    if tenant is None:
+        _override = lang
+    elif lang:
+        _by_tenant[tenant] = lang
+    else:
+        _by_tenant.pop(tenant, None)
 
 
 def memory_language() -> str:
+    tenant = _tenant.current.get()
+    if tenant and tenant in _by_tenant:
+        return _by_tenant[tenant]
     if _override:
         return _override
     env = (os.environ.get(ENV, "") or "").strip()

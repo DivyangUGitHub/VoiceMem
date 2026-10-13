@@ -7,7 +7,8 @@ import tempfile
 from pathlib import Path
 
 
-def readiness(frontend: Path, memory_root: Path, env: dict[str, str] | None = None) -> tuple[bool, dict[str, str]]:
+def readiness(frontend: Path, memory_root: Path, env: dict[str, str] | None = None,
+              database=None) -> tuple[bool, dict[str, str]]:
     """Return (ready, per-check result). ``ok`` or a short reason for each check."""
     env = os.environ if env is None else env
     checks: dict[str, str] = {}
@@ -23,5 +24,12 @@ def readiness(frontend: Path, memory_root: Path, env: dict[str, str] | None = No
         checks["memory_storage"] = f"not writable: {exc.strerror or exc}"
 
     checks["llm_credentials"] = "ok" if env.get("OPENAI_API_KEY") else "OPENAI_API_KEY is not set"
+
+    if database is not None:
+        try:
+            database()
+            checks["database"] = "ok"
+        except Exception as exc:  # noqa: BLE001 -- any failure means not ready
+            checks["database"] = f"unreachable: {type(exc).__name__}"
 
     return all(v == "ok" for v in checks.values()), checks

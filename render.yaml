@@ -11,6 +11,17 @@ services:
         sync: false
       # Access key(s) for the app. Render prompts for it; generate with
       #   python -c "import secrets; print(secrets.token_urlsafe(32))"
+      # Signs user sessions. Render generates it once and keeps it.
+      - key: VOICEMEM_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: voicemem-db
+          property: connectionString
+      # Set to "1" when you want people to create their own accounts.
+      - key: VOICEMEM_ALLOW_SIGNUP
+        value: "0"
+      # Optional keys for scripts; each key is a separate user.
       - key: VOICEMEM_API_KEYS
         sync: false
       # Render's proxy is the only way in, so trust its X-Forwarded-For for rate limiting.
@@ -26,3 +37,9 @@ services:
       name: voicemem-data
       mountPath: /var/lib/voicemem
       sizeGB: 10
+
+databases:
+  - name: voicemem-db
+    plan: basic-256mb
+    databaseName: voicemem
+    user: voicemem

@@ -47,6 +47,8 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "pydantic",           # web/utils.py 顶层就 import 了（fastapi 带得进来，但别靠它）
+    "sqlalchemy>=2",       # user accounts (production/accounts.py)
+    "psycopg[binary]>=3.2",  # Postgres driver for DATABASE_URL
     "websockets>=14",     # uvicorn 跑 WebSocket；examples/05 接 realtime 也用
     "sounddevice",        # examples 里的语音 agent：麦克风 + 扬声器
     "pywebrtc-audio",     # echo cancellation (helps prevent speaker playback from triggering barge-in)
