@@ -107,8 +107,10 @@ def verify_backup(path: Path) -> list[str]:
         if f.is_file() and is_sqlite(f):
             try:
                 conn = sqlite3.connect(f"file:{f}?mode=ro", uri=True)
-                result = conn.execute("PRAGMA integrity_check").fetchone()[0]
-                conn.close()
+                try:
+                    result = conn.execute("PRAGMA integrity_check").fetchone()[0]
+                finally:
+                    conn.close()               # a damaged file raises; an open handle blocks deletion on Windows
                 if result != "ok":
                     problems.append(f"{f.relative_to(path)}: {result}")
             except sqlite3.Error as exc:
