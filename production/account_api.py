@@ -6,6 +6,7 @@ set the tenant. Key holders (``k...`` tenants) have no account record and are re
 
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 
@@ -70,7 +71,9 @@ def build_account_app(accounts, purge, cookie_name: str) -> FastAPI:
     def export():
         user = me()
         spaces = [d for d in memory_root().glob(user["id"] + "_*") if d.is_dir()]
-        tmp = Path(tempfile.mkstemp(suffix=".zip")[1])
+        fd, name = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)                      # mkstemp leaves it open; Windows then cannot delete the file
+        tmp = Path(name)
         export_zip(spaces, tmp, user)
         return FileResponse(tmp, media_type="application/zip", filename="voicemem-export.zip",
                             background=BackgroundTask(tmp.unlink, missing_ok=True))
