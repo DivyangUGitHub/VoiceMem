@@ -74,3 +74,4 @@ voicemem_memoryspace/myvoicemem/*
 !voicemem_memoryspace/demo-en/.gitkeep
 !voicemem_memoryspace/myvoicemem/.gitke
 p
+.env.production
