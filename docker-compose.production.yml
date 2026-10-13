@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: voicemem
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production or your shell}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production and run compose with --env-file .env.production}
       POSTGRES_DB: voicemem
     volumes:
       - voicemem-db:/var/lib/postgresql/data
