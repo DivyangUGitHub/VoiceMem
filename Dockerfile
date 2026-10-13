@@ -71,6 +71,7 @@ RUN mkdir -p /var/lib/voicemem/voicemem_memoryspace /var/lib/voicemem/logs \
         /var/lib/voicemem/huggingface /var/lib/voicemem/models \
     && ln -s /var/lib/voicemem/models /app/models \
     && chown -R voicemem:voicemem /var/lib/voicemem /app/web \
+    && sed -i 's/\r$//' /app/production/entrypoint.sh \
     && chmod +x /app/production/entrypoint.sh
 
 EXPOSE 10000
