@@ -88,6 +88,7 @@ def test_restore_round_trip(site, tmp_path):
     shutil.copytree(dest / "memory", memory)                # restore, as documented
     conn = sqlite3.connect(memory / "u1_main" / "main.db")
     assert conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 50
+    conn.close()
     assert (memory / "u2_main" / "notes.txt").read_text() == "other user"
 
 
