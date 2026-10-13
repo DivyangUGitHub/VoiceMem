@@ -33,8 +33,8 @@ Data volume                   every user's memory spaces, under VOICEMEM_MEMORYS
 ```bash
 cp .env.production.example .env.production
 python -c "import secrets; print(secrets.token_urlsafe(48))"   # paste as VOICEMEM_SECRET_KEY
-# also set OPENAI_API_KEY, and export POSTGRES_PASSWORD for the compose file
-docker compose -f docker-compose.production.yml up --build
+# also set OPENAI_API_KEY and POSTGRES_PASSWORD (letters and digits only) in .env.production
+docker compose --env-file .env.production -f docker-compose.production.yml up --build
 ```
 
 Open `http://localhost:8787`. Sign-up is off by default. Set `VOICEMEM_ALLOW_SIGNUP=1` to
