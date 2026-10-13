@@ -56,8 +56,12 @@ other host set it to your proxy's address, or every user shares one rate-limit b
 
 The image does not contain model weights. They live on the data volume under
 `/var/lib/voicemem/models` (`VOICEMEM_MODELS_DIR`). Fetch them with
-`scripts/download_models.sh` before the first real session. The app starts without them,
-but the voice features that need them will not work.
+`scripts/download_models.sh` before the first real session. Without them the runtime tries to
+download the small embedding model from huggingface.co at start-up and exits if it cannot
+reach it (for example behind a company proxy that re-signs HTTPS, which shows up as
+`CERTIFICATE_VERIFY_FAILED`). Downloaded files are cached on the data volume, so this
+happens once. Other models are fetched the first time a feature needs them and can be
+several GB.
 
 ## People and their data
 
