@@ -1,303 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { api, AuthError, Me, Memory, Space } from "../lib/api";
-
-type Message = { role: "user" | "assistant"; text: string };
-
-function textOf(memory: Memory) {
-  return memory.content || memory.text || "";
-}
-
-function Console({
-  onUnauthorized,
-  onLogout,
-  onAccount,
-  email,
-}: {
-  onUnauthorized: () => void;
-  onLogout: () => void;
-  onAccount?: () => void;
-  email?: string;
-}) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [memories, setMemories] = useState<{ left: Memory[]; right: Memory[] }>({
-    left: [],
-    right: [],
-  });
-  const [spaces, setSpaces] = useState<Space[]>([]);
-  const [activeSpace, setActiveSpace] = useState("");
-  const [input, setInput] = useState("");
-  const [connected, setConnected] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const socket = useRef<WebSocket | null>(null);
-
-  const loadState = useCallback(async () => {
-    try {
-      const [snapshot, spaceState] = await Promise.all([
-        api.getMemories(),
-        api.getSpaces(),
-      ]);
-      setMemories({
-        left: snapshot.left || [],
-        right: snapshot.right || [],
-      });
-      setSpaces(spaceState.spaces || []);
-      setActiveSpace(spaceState.active || "");
-    } catch (err) {
-      if (err instanceof AuthError) return onUnauthorized();
-      setError(err instanceof Error ? err.message : "Unable to load VoiceMem");
-    }
-  }, [onUnauthorized]);
-
-  const connect = useCallback(() => {
-    socket.current?.close();
-    const ws = new WebSocket(
-      `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/backend/ws`,
-    );
-    socket.current = ws;
-
-    ws.onopen = () => {
-      setConnected(true);
-      setError("");
-    };
-
-    ws.onclose = () => {
-      setConnected(false);
-      setBusy(false);
-    };
-
-    ws.onerror = () => {
-      setConnected(false);
-      setError("VoiceMem connection failed. Check the backend.");
-    };
-
-    ws.onmessage = (event) => {
-      if (typeof event.data !== "string") return;
-      let message: any;
-      try {
-        message = JSON.parse(event.data);
-      } catch {
-        return;
-      }
-
-      if (message.type === "answer_start") {
-        setBusy(true);
-        setMessages((current) => [...current, { role: "assistant", text: "" }]);
-      }
-
-      if (message.type === "answer_delta") {
-        // Append to the last assistant message. Reading a ref here lost text when the final
-        // chunk and "done" arrived in the same tick.
-        setMessages((current) => {
-          const last = current.length - 1;
-          if (last < 0 || current[last].role !== "assistant") return current;
-          const next = [...current];
-          next[last] = { ...next[last], text: next[last].text + String(message.text || "") };
-          return next;
-        });
-      }
-
-      if (message.type === "answer_done") {
-        setBusy(false);
-      }
-
-      if (message.type === "memory_hits") {
-        setMemories({
-          left: message.left || [],
-          right: message.right || [],
-        });
-      }
-
-      if (message.type === "error") {
-        setBusy(false);
-        setError(String(message.message || "VoiceMem returned an error"));
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    loadState();
-    connect();
-    const timer = window.setInterval(loadState, 10000);
-    return () => {
-      window.clearInterval(timer);
-      socket.current?.close();
-    };
-  }, [connect, loadState]);
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const text = input.trim();
-    if (!text || !socket.current || socket.current.readyState !== WebSocket.OPEN || busy) {
-      return;
-    }
-    setMessages((current) => [...current, { role: "user", text }]);
-    socket.current.send(JSON.stringify({ type: "user_text", text }));
-    setInput("");
-    setBusy(true);
-  };
-
-  const switchSpace = async (space: string) => {
-    try {
-      await api.useSpace(space);
-      setActiveSpace(space);
-      setMessages([]);
-      await loadState();
-    } catch (err) {
-      if (err instanceof AuthError) return onUnauthorized();
-      setError(err instanceof Error ? err.message : "Unable to switch memory space");
-    }
-  };
-
-  const createSpace = async () => {
-    const name = window.prompt("Memory space name");
-    if (!name?.trim()) return;
-    try {
-      const created = await api.createSpace(name.trim(), "en");
-      await switchSpace(created.name);
-      await loadState();
-    } catch (err) {
-      if (err instanceof AuthError) return onUnauthorized();
-      setError(err instanceof Error ? err.message : "Unable to create memory space");
-    }
-  };
-
-  return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <h1>VOICEMEM</h1>
-          <span className="badge">{connected ? "LIVE" : "OFFLINE"}</span>
-        </div>
-
-        <div>
-          <p className="section-title">Memory spaces</p>
-          <div className="space-list">
-            {spaces.map((space) => (
-              <button
-                className={`space ${space.name === activeSpace ? "active" : ""}`}
-                key={space.id}
-                onClick={() => switchSpace(space.name)}
-              >
-                {space.name}
-                <small>{space.count ?? 0} memories</small>
-              </button>
-            ))}
-          </div>
-          <button className="secondary" style={{ width: "100%", marginTop: 9 }} onClick={createSpace}>
-            + New space
-          </button>
-        </div>
-
-        <div style={{ marginTop: "auto" }}>
-          <p className="section-title">Voice</p>
-          <a className="link" href="/backend/" target="_blank" rel="noreferrer">
-            Open real-time voice console →
-          </a>
-          {onAccount && (
-            <button className="secondary" style={{ width: "100%", marginTop: 9 }} onClick={onAccount} title={email}>
-              Account
-            </button>
-          )}
-          <button className="secondary" style={{ width: "100%", marginTop: 9 }} onClick={onLogout}>
-            Sign out
-          </button>
-        </div>
-      </aside>
-
-      <main className="main">
-        <header className="topbar">
-          <div>
-            <h2>{activeSpace || "VoiceMem"}</h2>
-            <div className="connection">
-              {connected ? "Connected to the VoiceMem runtime" : "Connecting to the VoiceMem runtime…"}
-            </div>
-          </div>
-          <button className="secondary" onClick={connect}>Reconnect</button>
-        </header>
-
-        <section className="messages">
-          {messages.length === 0 ? (
-            <div className="empty">
-              <h2>Long-term memory, ready to query.</h2>
-              <p>
-                Ask about facts, preferences, people, experiences, or anything VoiceMem has
-                already learned in this memory space.
-              </p>
-            </div>
-          ) : (
-            messages.map((message, index) => (
-              <article className={`message ${message.role}`} key={index}>
-                <div className="role">{message.role}</div>
-                <div className="bubble">{message.text || (busy && message.role === "assistant" ? "…" : "")}</div>
-              </article>
-            ))
-          )}
-        </section>
-
-        <form className="composer" onSubmit={submit}>
-          <textarea
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                submit(event);
-              }
-            }}
-            placeholder="Ask VoiceMem something…"
-            disabled={!connected || busy}
-          />
-          <button type="submit" disabled={!connected || busy || !input.trim()}>
-            Send
-          </button>
-        </form>
-      </main>
-
-      <aside className="inspector">
-        <p className="section-title">Retrieved memory</p>
-
-        <div className="card">
-          <h3>Left brain</h3>
-          {memories.left.length === 0 ? (
-            <div className="meta">No factual memories retrieved yet.</div>
-          ) : (
-            memories.left.slice(0, 12).map((memory, index) => (
-              <div className="memory" key={index}>
-                {textOf(memory)}
-                {(memory.source || memory.priority !== undefined) && (
-                  <div className="meta">
-                    {memory.source || "memory"}{memory.priority !== undefined ? ` · priority ${memory.priority}` : ""}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="card">
-          <h3>Right brain</h3>
-          {memories.right.length === 0 ? (
-            <div className="meta">No emotional or personality memories retrieved yet.</div>
-          ) : (
-            memories.right.slice(0, 12).map((memory, index) => (
-              <div className="memory" key={index}>
-                {textOf(memory)}
-                <div className="meta">
-                  {[memory.cluster, memory.slot, memory.source].filter(Boolean).join(" · ")}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {error && <div className="error">{error}</div>}
-      </aside>
-    </div>
-  );
-}
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { api, Me } from "../lib/api";
 
 type Mode = "signin" | "signup" | "key";
 
@@ -564,10 +268,22 @@ function AccountPanel({
   );
 }
 
+// The voice console is the product. Signed-in users go straight to it; "?account" opens
+// the account screen (export, password, delete) and returns to the console when closed.
+const CONSOLE_URL = "/backend/";
+
+function Account({ email, onSignedOut }: { email?: string; onSignedOut: () => void }) {
+  const wantsAccount = typeof window !== "undefined" && window.location.search.includes("account");
+  useEffect(() => {
+    if (!wantsAccount || !email) window.location.replace(CONSOLE_URL);
+  }, [wantsAccount, email]);
+  if (!wantsAccount || !email) return null;
+  return <AccountPanel email={email} onClose={() => window.location.replace(CONSOLE_URL)} onSignedOut={onSignedOut} />;
+}
+
 export default function Home() {
   // null = still checking
   const [me, setMe] = useState<Me | null>(null);
-  const [showAccount, setShowAccount] = useState(false);
 
   const refresh = useCallback(() => api.me().then(setMe, () => setMe({ authenticated: false, accounts: false, signupAllowed: false })), []);
   useEffect(() => {
@@ -575,7 +291,6 @@ export default function Home() {
   }, [refresh]);
 
   const signedOut = useCallback(() => {
-    setShowAccount(false);
     return refresh();
   }, [refresh]);
   const logout = useCallback(async () => {
@@ -586,17 +301,5 @@ export default function Home() {
   if (me === null) return null;
   if (!me.authenticated) return <Auth me={me} onDone={refresh} />;
   if (me.user && !me.user.consented) return <Consent email={me.user.email} onDone={refresh} onLogout={logout} />;
-  return (
-    <>
-      <Console
-        onUnauthorized={signedOut}
-        onLogout={logout}
-        onAccount={me.user ? () => setShowAccount(true) : undefined}
-        email={me.user?.email}
-      />
-      {showAccount && me.user && (
-        <AccountPanel email={me.user.email} onClose={() => setShowAccount(false)} onSignedOut={signedOut} />
-      )}
-    </>
-  );
+  return <Account email={me.user?.email} onSignedOut={signedOut} />;
 }
