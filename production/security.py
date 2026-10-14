@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from starlette.requests import cookie_parser
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
 
 from production.accounts import AccountError, EmailTaken, make_session, read_session
 from voicemem.utils.common import tenant
@@ -256,7 +256,7 @@ class SecurityMiddleware:
         }
         if self._is_https(scope, h):
             out["Strict-Transport-Security"] = "max-age=31536000"
-        if path.startswith("/auth/") or path.startswith("/backend/api/"):
+        if path.startswith("/auth/") or path.startswith("/backend/api/") or path in ("/backend", "/backend/"):
             out["Cache-Control"] = "no-store"
         return [(k.lower().encode(), v.encode()) for k, v in out.items()]
 
@@ -287,6 +287,8 @@ class SecurityMiddleware:
             if who is None and not self.s.auth_disabled:
                 log.warning("auth rejected client=%s path=%s", client, path)
                 limited = not self.limiter.allow("authfail", client, self.s.authfail_per_min)
+                if not limited and scope["method"] == "GET" and "text/html" in h.get("accept", ""):
+                    return await RedirectResponse("/", status_code=302)(scope, receive, send)   # a browser tab: show sign-in
                 resp = JSONResponse({"error": "rate_limited" if limited else "unauthorized"},
                                     status_code=429 if limited else 401)
                 return await resp(scope, receive, send)

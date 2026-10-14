@@ -219,6 +219,15 @@ def test_cross_site_requests_cannot_delete_or_change_anything(world):
     assert c.get("/account/").status_code == 200                    # the account still exists
 
 
+def test_a_signed_out_browser_tab_is_sent_to_the_sign_in_page(world):
+    _, client = world
+    c = client()
+    r = c.get("/backend/", headers={"Accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/"
+    assert c.get("/backend/api/whoami").status_code == 401                  # scripts still get a plain 401
+    assert r.headers["cache-control"] == "no-store"                         # a cached console must not outlive sign-out
+
+
 def test_account_endpoints_need_sign_in(world):
     _, client = world
     c = client()

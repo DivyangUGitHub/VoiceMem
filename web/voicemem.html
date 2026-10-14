@@ -149,6 +149,9 @@ button{cursor:pointer;background:none;border:none}
 .btn.primary:hover{background:#fff;border-color:#fff}
 .btn.live{border-color:rgba(239,123,171,.55);color:#f2a3c5}
 .btn.sm{padding:5px 11px;font-size:12px}
+.btn[hidden]{display:none}
+.side-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.side-foot .acct{display:flex;gap:6px}
 .btn.on{border-color:rgba(121,215,162,.5);color:#a2e3bf}
 .btn[disabled]{opacity:.35;cursor:default}
 .btn[disabled]:hover{background:none}
@@ -284,23 +287,25 @@ button{cursor:pointer;background:none;border:none}
   <!-- ① 侧栏：Memory Space + 该空间下的对话 -->
   <aside class="sidebar">
     <div class="side-head">
-      <button class="ico" id="btnCollapse" title="收起侧栏" aria-label="收起侧栏">
+      <button class="ico" id="btnCollapse" data-i18n-title="collapse" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/></svg>
       </button>
       <span class="grow"></span>
-      <button class="ico" id="btnSearch" title="搜索对话 (⌘K)" aria-label="搜索对话">
+      <button class="ico" id="btnSearch" data-i18n-title="searchChats" title="Search chats (⌘K)" aria-label="Search chats">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
       </button>
-      <button class="ico" id="btnNew" title="新对话" aria-label="新对话">
+      <button class="ico" id="btnNew" data-i18n-title="newChat" title="New chat" aria-label="New chat">
         <svg viewBox="0 0 24 24"><path d="M4 20h4l10-10a2.5 2.5 0 0 0-3.5-3.5L4.5 16.5V20z"/><path d="M13.5 7.5 16.5 10.5"/></svg>
       </button>
     </div>
-    <div class="side-search" id="sideSearch"><input id="searchIn" placeholder="搜索对话" spellcheck="false" /></div>
+    <div class="side-search" id="sideSearch"><input id="searchIn" data-i18n-ph="searchChats" placeholder="Search chats" spellcheck="false" /></div>
     <div class="side-scroll">
-      <div class="side-label">对话<span class="c" id="sessCount"></span></div>
+      <div class="side-label"><span data-i18n="chats">Chats</span><span class="c" id="sessCount"></span></div>
       <ul class="sess" id="sessList"></ul>
     </div>
-    <div class="side-foot">VOICEMEM</div>
+    <div class="side-foot"><span>VOICEMEM</span>
+      <span class="acct"><button class="btn sm" id="acctBtn" hidden>Account</button>
+      <button class="btn sm" id="outBtn" hidden>Sign out</button></span></div>
   </aside>
 
   <!-- ② 实时对话 -->
@@ -310,36 +315,36 @@ button{cursor:pointer;background:none;border:none}
     <div class="panel p-in">
       <div class="panel-h" data-i18n="liveInput">流式输入 · Live input</div>
       <div class="spk" id="spk">
-        <span class="av" id="spkAv">你</span>
-        <span class="nm" id="spkNm">你</span>
+        <span class="av" id="spkAv">Y</span>
+        <span class="nm" id="spkNm" data-i18n="you">You</span>
         <span class="id" id="spkId" data-i18n="voiceMatched">speaker 0 · 声纹已匹配</span>
         <span class="lv" id="spkLv"><i></i><i></i><i></i><i></i><i></i></span>
       </div>
       <div class="live-text idle" id="liveInput" data-i18n="waitingYou">等待你说话…</div>
-      <input id="textIn" class="textin" placeholder="或直接打字回车" />
+      <input id="textIn" class="textin" data-i18n-ph="typeHint" placeholder="Or just type and press Enter" />
       <div class="tags" id="tags"></div>
     </div>
 
     <div class="panel p-recall">
-      <div class="panel-h">Top-K 召回</div>
+      <div class="panel-h" data-i18n="topK">Top-K recall</div>
       <div class="recall-cols">
-        <div class="rc l"><div class="rc-h">左脑 · 事实</div><ul id="recallL"></ul></div>
-        <div class="rc r"><div class="rc-h">右脑 · 画像</div><ul id="recallR"></ul></div>
+        <div class="rc l"><div class="rc-h" data-i18n="leftFacts">Left · Facts</div><ul id="recallL"></ul></div>
+        <div class="rc r"><div class="rc-h" data-i18n="rightProfile">Right · Profile</div><ul id="recallR"></ul></div>
       </div>
     </div>
 
     <div class="panel p-out">
-      <div class="panel-h">AI 回复</div>
-      <div class="reply idle" id="reply">这一轮还没有回复。</div>
+      <div class="panel-h" data-i18n="aiReply">AI reply</div>
+      <div class="reply idle" id="reply" data-i18n="noReplyYet">No reply yet.</div>
       <div class="out-foot">
         <div class="voice" id="voice">
           <div class="ear"><span class="ring"></span></div>
           <canvas id="wave"></canvas>
-          <span class="lab" id="voiceLab">待机</span>
+          <span class="lab" id="voiceLab" data-i18n="idle">Idle</span>
         </div>
         <div class="btns">
-          <button class="btn" id="pauseBtn" disabled>暂停</button>
-          <button class="btn primary" id="talkBtn">开始对话</button>
+          <button class="btn" id="pauseBtn" disabled data-i18n="pause">Pause</button>
+          <button class="btn primary" id="talkBtn" data-i18n="talkStart">Start talking</button>
         </div>
       </div>
     </div>
@@ -363,11 +368,11 @@ button{cursor:pointer;background:none;border:none}
                 title="切换 Memory Space"></select>
         <button class="btn sm" id="newSpaceBtn" data-i18n-title="spaceNewTitle"
                 title="新建一个 Memory Space">+</button>
-        <select class="sel" id="langSel" title="Language / 界面与助手语言">
+        <select class="sel" id="langSel" title="Language">
           <option value="zh">中文</option>
           <option value="en">EN</option>
         </select>
-        <select class="sel" id="dlScope" title="选择导出范围">
+        <select class="sel" id="dlScope" title="Choose what to download">
           <option value="all" data-i18n="dlAll">本空间全部记忆</option>
           <option value="left" data-i18n="dlLeft">左脑 · 事实</option>
           <option value="right" data-i18n="dlRight">右脑 · 画像</option>
@@ -381,7 +386,7 @@ button{cursor:pointer;background:none;border:none}
       <div class="track" id="track">
         <div class="pane">
           <div class="chat-head">
-            <span class="ttl" id="chatTitle">新对话</span>
+            <span class="ttl" id="chatTitle" data-i18n="newChat">New chat</span>
           </div>
           <div class="chat" id="chatLog"></div>
         </div>
@@ -390,8 +395,8 @@ button{cursor:pointer;background:none;border:none}
             <img id="brain" alt="" src="./images/background.webp" />
             <canvas id="fx"></canvas>
             <div class="legend">
-              <span><i style="background:#6ba7f0"></i>左脑 · 事实</span>
-              <span><i style="background:#ef7bab"></i>右脑 · 画像</span>
+              <span><i style="background:#6ba7f0"></i><span data-i18n="leftFacts">Left · Facts</span></span>
+              <span><i style="background:#ef7bab"></i><span data-i18n="rightProfile">Right · Profile</span></span>
             </div>
             <div id="card" aria-hidden="true">
               <div class="eb"><span class="sw" id="c-sw"></span><span class="kd" id="c-kd">entity</span><span class="id" id="c-id">#0000</span></div>
@@ -481,6 +486,8 @@ const BASE=location.pathname.replace(/\/[^/]*$/,'');   // '' at /, '/backend' be
 const I18N = {
   zh: {
     chat:'Chat', memspace:'Memory Space', liveInput:'Live input',
+    chats:'Chats', searchChats:'Search chats', typeHint:'Or just type and press Enter',
+    topK:'Top-K recall', aiReply:'AI reply',
     you:'You', waitingYou:'Waiting for you to speak…', noReplyYet:'No reply yet.',
     talkStart:'Start talking', talkEnd:'End session', pause:'Pause', resume:'Resume',
     ended:'Session ended.',
@@ -1062,7 +1069,7 @@ const SPACES = {};
 const SPACE_IDS=[];
 
 /* ── 会话 ─────────────────────────────────────────────────────────── */
-function blankUI(){ return { input:'', reply:'', speaker:'你',
+function blankUI(){ return { input:'', reply:'', speaker:'You',
   tags:{emo:'',ent:'',sch:''}, recallL:[], recallR:[] }; }
 let sessions=[], currentId=0, nextId=1, activeSpace='demo', searchQ='';
 
@@ -1295,7 +1302,7 @@ function renderChat(){
     const w=document.createElement('div');
     w.className='turn '+(turn.role==='user'?'user':'ai');
     const who=document.createElement('div'); who.className='who';
-    who.textContent=turn.role==='user'?(turn.speaker||'你'):'VoiceMem';
+    who.textContent=turn.role==='user'?(turn.speaker||'You'):'VoiceMem';
     const said=document.createElement('div'); said.className='said'; said.textContent=turn.text;
     w.append(who,said); box.appendChild(w);
   }
@@ -1322,7 +1329,7 @@ function renderIO(s){
   const box=$('tags'); box.innerHTML='';
   box.append(chip('emo','emotion',s.ui.tags.emo),chip('ent','entity',s.ui.tags.ent),
              chip('sch','schema',s.ui.tags.sch));
-  const spk=s.ui.speaker||'你';
+  const spk=s.ui.speaker||'You';
   $('spkNm').textContent=spk;
   $('spkAv').textContent=spk.slice(0,1);
   $('spkAv').style.background=SPK_COLOR[spk]||'#9b8cf0';
@@ -1441,7 +1448,7 @@ $('dlBtn').addEventListener('click',async()=>{
     const s=currentSession();
     if(!s||!s.turns.length){ toast(i18n('emptyChat')); return; }
     const md='# '+s.title+'\n\n> Memory Space: '+sp.name+'\n\n'+
-      s.turns.map(t=>(t.role==='user'?('**'+(t.speaker||'你')+'**\n\n'):'**VoiceMem**\n\n')+t.text)
+      s.turns.map(t=>(t.role==='user'?('**'+(t.speaker||'You')+'**\n\n'):'**VoiceMem**\n\n')+t.text)
         .join('\n\n---\n\n');
     saveFile(md,'voicemem-'+sp.id+'-chat-'+stamp()+'.md','text/markdown');
     toast(i18n('downloadedChat')); return;
@@ -2059,7 +2066,7 @@ function handle(m){
       // 不清的话，说一句抽不出东西的话（「啦啦啦」），标签栏还挂着上一句的实体。
       s.ui.tags={emo:'',ent:'',sch:''};
       lvOn=false; s.ui.input=m.text; paint(s);
-      addTurn(s,'user',m.text,s.ui.speaker||'你'); break;
+      addTurn(s,'user',m.text,s.ui.speaker||'You'); break;
 
     case 'memory_hits': {
       const L=m.left_brain||[], R=m.right_brain_hits||[];
@@ -2331,6 +2338,17 @@ loadSpaces().then(loadMemories);
 fetch(BASE+'/api/lang',{method:'POST',headers:{'Content-Type':'application/json'},
                    body:JSON.stringify({lang:LANG})}).catch(()=>{});
 })();
+
+/* Account and Sign out show up only behind the production app, where /auth/me exists. */
+fetch('/auth/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(me=>{
+  if(!me||!me.authenticated||!me.auth_required) return;
+  document.getElementById('outBtn').hidden=false;
+  if(me.user){ document.getElementById('acctBtn').hidden=false; document.getElementById('acctBtn').addEventListener('click',()=>{ location.href='/?account'; }); }
+  document.getElementById('outBtn').addEventListener('click',async()=>{
+    try{ await fetch('/auth/logout',{method:'POST',credentials:'same-origin'}); }catch(e){}
+    location.href='/';
+  });
+}).catch(()=>{});
 </script>
 </body>
 </html>

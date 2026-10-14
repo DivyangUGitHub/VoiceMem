@@ -17,12 +17,12 @@ production.asgi:app
   |-- SecurityMiddleware      sign-in, origin check, limits, headers; labels each request with its user
   |-- Observability           request id, JSON access log, metrics
   |
-  |-- /                       Next.js app: sign-up, sign-in, consent, chat, account (public files)
+  |-- /                       Next.js app: sign-up, sign-in, consent, account. Signed-in users go on to /backend/
   |-- /auth/*                 sign-up, sign-in, sign-out, who am I (public, rate limited)
   |-- /account/*              view, consent, change password, export, delete (needs sign-in)
   |-- /healthz, /readyz       for the platform
   |-- /metrics, /api-docs     need sign-in
-  `-- /backend/**             the VoiceMem runtime and the voice console, needs sign-in
+  `-- /backend/**             the voice console (the product screen) and the runtime behind it, needs sign-in
 
 Postgres (DATABASE_URL)       accounts only
 Data volume                   every user's memory spaces, under VOICEMEM_MEMORYSPACE_ROOT
@@ -82,7 +82,7 @@ per user. Background work started by the library keeps the label.
 screen says the app processes voice, learns a voiceprint and keeps recordings. Withdrawing
 consent closes the door again.
 
-**Their rights.** From the Account menu, or `/account/*`:
+**Their rights.** From the Account button in the console's sidebar (it opens `/?account`), or `/account/*`:
 
 | Action | Endpoint |
 |---|---|
